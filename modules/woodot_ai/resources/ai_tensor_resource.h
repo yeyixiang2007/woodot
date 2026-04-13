@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  register_types.cpp                                                    */
+/*  ai_tensor_resource.h                                                  */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -28,53 +28,49 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#include "register_types.h"
+#pragma once
 
-#include "core/config/engine.h"
-#include "core/object/class_db.h"
-#include "modules/woodot_ai/resources/ai_model_resource.h"
-#include "modules/woodot_ai/resources/ai_tensor_resource.h"
-#include "modules/woodot_ai/runtime/ai_requests.h"
-#include "modules/woodot_ai/runtime/ai_task_handle.h"
-#include "modules/woodot_ai/runtime/ai_runtime_server.h"
+#include "core/io/resource.h"
+#include "core/variant/type_info.h"
 
-static AIRuntimeServer *woodot_ai_runtime_server = nullptr;
+class AITensorResource : public Resource {
+	GDCLASS(AITensorResource, Resource);
 
-void initialize_woodot_ai_module(ModuleInitializationLevel p_level) {
-	switch (p_level) {
-		case MODULE_INITIALIZATION_LEVEL_CORE:
-			GDREGISTER_CLASS(AIModelResource);
-			GDREGISTER_CLASS(AITensorResource);
-			GDREGISTER_CLASS(AICompletionRequest);
-			GDREGISTER_CLASS(AIEmbeddingRequest);
-			GDREGISTER_CLASS(AITaskHandle);
-			GDREGISTER_CLASS(AIRuntimeServer);
-			break;
-		case MODULE_INITIALIZATION_LEVEL_SERVERS: {
-			woodot_ai_runtime_server = memnew(AIRuntimeServer);
-			Engine::get_singleton()->add_singleton(Engine::Singleton("AIRuntimeServer", woodot_ai_runtime_server, "AIRuntimeServer"));
-		} break;
-		case MODULE_INITIALIZATION_LEVEL_SCENE:
-		case MODULE_INITIALIZATION_LEVEL_EDITOR:
-			break;
-	}
-}
+public:
+	enum StorageType {
+		STORAGE_TYPE_CPU = 0,
+		STORAGE_TYPE_CPU_MIRROR,
+		STORAGE_TYPE_EXTERNAL_DEVICE,
+	};
 
-void uninitialize_woodot_ai_module(ModuleInitializationLevel p_level) {
-	switch (p_level) {
-		case MODULE_INITIALIZATION_LEVEL_CORE:
-			break;
-		case MODULE_INITIALIZATION_LEVEL_SERVERS:
-			if (woodot_ai_runtime_server != nullptr) {
-				if (Engine::get_singleton()->has_singleton("AIRuntimeServer")) {
-					Engine::get_singleton()->remove_singleton("AIRuntimeServer");
-				}
-				memdelete(woodot_ai_runtime_server);
-				woodot_ai_runtime_server = nullptr;
-			}
-			break;
-		case MODULE_INITIALIZATION_LEVEL_SCENE:
-		case MODULE_INITIALIZATION_LEVEL_EDITOR:
-			break;
-	}
-}
+private:
+	PackedInt32Array shape;
+	StringName dtype = StringName("float32");
+	StorageType storage_type = STORAGE_TYPE_CPU;
+	PackedFloat32Array cpu_data;
+	Dictionary metadata;
+
+protected:
+	static void _bind_methods();
+
+public:
+	void set_shape(const PackedInt32Array &p_shape);
+	PackedInt32Array get_shape() const;
+
+	void set_dtype(const StringName &p_dtype);
+	StringName get_dtype() const;
+
+	void set_storage_type(StorageType p_storage_type);
+	StorageType get_storage_type() const;
+
+	void set_cpu_data(const PackedFloat32Array &p_cpu_data);
+	PackedFloat32Array get_cpu_data() const;
+
+	void set_metadata(const Dictionary &p_metadata);
+	Dictionary get_metadata() const;
+
+	bool is_device_backed() const;
+	int64_t get_element_count() const;
+};
+
+VARIANT_ENUM_CAST(AITensorResource::StorageType);

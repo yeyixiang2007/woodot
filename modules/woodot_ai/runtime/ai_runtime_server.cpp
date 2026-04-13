@@ -79,7 +79,7 @@ AIRuntimeServer *AIRuntimeServer::get_singleton() {
 RID AIRuntimeServer::load_model(const Ref<AIModelResource> &p_model) {
 	ERR_FAIL_COND_V_MSG(p_model.is_null(), RID(), "AIRuntimeServer requires a valid AIModelResource.");
 
-	const StringName backend_name = p_model->get_backend_name() == StringName() ? StringName("llama") : p_model->get_backend_name();
+	const StringName backend_name = p_model->get_backend_type() == StringName() ? StringName("llama") : p_model->get_backend_type();
 
 	AIBackend *backend = nullptr;
 	{
@@ -235,8 +235,17 @@ Dictionary AIRuntimeServer::get_model_info(const RID &p_model_rid) const {
 
 	info["model_rid"] = p_model_rid;
 	info["backend_name"] = record->backend_name;
-	info["source_path"] = record->resource.is_valid() ? record->resource->get_source_path() : String();
-	info["backend_options"] = record->resource.is_valid() ? record->resource->get_backend_options() : Dictionary();
+	info["model_path"] = record->resource.is_valid() ? record->resource->get_model_path() : String();
+	info["backend_type"] = record->resource.is_valid() ? record->resource->get_backend_type() : StringName();
+	info["context_size"] = record->resource.is_valid() ? record->resource->get_context_size() : 0;
+	info["n_threads"] = record->resource.is_valid() ? record->resource->get_n_threads() : 0;
+	info["n_gpu_layers"] = record->resource.is_valid() ? record->resource->get_n_gpu_layers() : 0;
+	info["quantization"] = record->resource.is_valid() ? record->resource->get_quantization() : String();
+	info["chat_template"] = record->resource.is_valid() ? record->resource->get_chat_template() : String();
+	info["rope_scaling"] = record->resource.is_valid() ? record->resource->get_rope_scaling() : 1.0f;
+	info["system_prompt_template"] = record->resource.is_valid() ? record->resource->get_system_prompt_template() : String();
+	info["capability_tags"] = record->resource.is_valid() ? record->resource->get_capability_tags() : PackedStringArray();
+	info["extra_options"] = record->resource.is_valid() ? record->resource->get_extra_options() : Dictionary();
 	info["backend_metadata"] = record->metadata;
 	return info;
 }

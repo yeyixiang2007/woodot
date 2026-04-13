@@ -205,7 +205,7 @@ TEST_CASE("[WoodotAI] Queued task cancellation drains through mailbox") {
 
 	Ref<AIModelResource> model;
 	model.instantiate();
-	model->set_backend_name(backend.get_backend_name());
+	model->set_backend_type(backend.get_backend_name());
 
 	const AIBackendModelLoadResult model_load = backend.load_model(model);
 	REQUIRE(model_load.is_ok());
@@ -231,7 +231,7 @@ TEST_CASE("[WoodotAI] Timeout results map to timeout cancellation") {
 
 	Ref<AIModelResource> model;
 	model.instantiate();
-	model->set_backend_name(backend.get_backend_name());
+	model->set_backend_type(backend.get_backend_name());
 
 	const AIBackendModelLoadResult model_load = backend.load_model(model);
 	REQUIRE(model_load.is_ok());
@@ -257,7 +257,7 @@ TEST_CASE("[WoodotAI] Synthetic scheduler soak keeps bookkeeping stable") {
 
 	Ref<AIModelResource> model;
 	model.instantiate();
-	model->set_backend_name(backend.get_backend_name());
+	model->set_backend_type(backend.get_backend_name());
 
 	const AIBackendModelLoadResult model_load = backend.load_model(model);
 	REQUIRE(model_load.is_ok());

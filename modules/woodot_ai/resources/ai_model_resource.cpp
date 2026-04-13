@@ -33,39 +33,55 @@
 #include "core/object/class_db.h"
 
 void AIModelResource::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("set_backend_name", "backend_name"), &AIModelResource::set_backend_name);
-	ClassDB::bind_method(D_METHOD("get_backend_name"), &AIModelResource::get_backend_name);
-	ClassDB::bind_method(D_METHOD("set_source_path", "source_path"), &AIModelResource::set_source_path);
-	ClassDB::bind_method(D_METHOD("get_source_path"), &AIModelResource::get_source_path);
-	ClassDB::bind_method(D_METHOD("set_backend_options", "backend_options"), &AIModelResource::set_backend_options);
-	ClassDB::bind_method(D_METHOD("get_backend_options"), &AIModelResource::get_backend_options);
+	ClassDB::bind_method(D_METHOD("set_model_path", "model_path"), &AIModelResource::set_model_path);
+	ClassDB::bind_method(D_METHOD("get_model_path"), &AIModelResource::get_model_path);
+	ClassDB::bind_method(D_METHOD("set_backend_type", "backend_type"), &AIModelResource::set_backend_type);
+	ClassDB::bind_method(D_METHOD("get_backend_type"), &AIModelResource::get_backend_type);
+	ClassDB::bind_method(D_METHOD("set_context_size", "context_size"), &AIModelResource::set_context_size);
+	ClassDB::bind_method(D_METHOD("get_context_size"), &AIModelResource::get_context_size);
+	ClassDB::bind_method(D_METHOD("set_n_threads", "n_threads"), &AIModelResource::set_n_threads);
+	ClassDB::bind_method(D_METHOD("get_n_threads"), &AIModelResource::get_n_threads);
+	ClassDB::bind_method(D_METHOD("set_n_gpu_layers", "n_gpu_layers"), &AIModelResource::set_n_gpu_layers);
+	ClassDB::bind_method(D_METHOD("get_n_gpu_layers"), &AIModelResource::get_n_gpu_layers);
+	ClassDB::bind_method(D_METHOD("set_quantization", "quantization"), &AIModelResource::set_quantization);
+	ClassDB::bind_method(D_METHOD("get_quantization"), &AIModelResource::get_quantization);
+	ClassDB::bind_method(D_METHOD("set_chat_template", "chat_template"), &AIModelResource::set_chat_template);
+	ClassDB::bind_method(D_METHOD("get_chat_template"), &AIModelResource::get_chat_template);
+	ClassDB::bind_method(D_METHOD("set_rope_scaling", "rope_scaling"), &AIModelResource::set_rope_scaling);
+	ClassDB::bind_method(D_METHOD("get_rope_scaling"), &AIModelResource::get_rope_scaling);
+	ClassDB::bind_method(D_METHOD("set_system_prompt_template", "system_prompt_template"), &AIModelResource::set_system_prompt_template);
+	ClassDB::bind_method(D_METHOD("get_system_prompt_template"), &AIModelResource::get_system_prompt_template);
+	ClassDB::bind_method(D_METHOD("set_capability_tags", "capability_tags"), &AIModelResource::set_capability_tags);
+	ClassDB::bind_method(D_METHOD("get_capability_tags"), &AIModelResource::get_capability_tags);
+	ClassDB::bind_method(D_METHOD("set_extra_options", "extra_options"), &AIModelResource::set_extra_options);
+	ClassDB::bind_method(D_METHOD("get_extra_options"), &AIModelResource::get_extra_options);
 
-	ADD_PROPERTY(PropertyInfo(Variant::STRING_NAME, "backend_name"), "set_backend_name", "get_backend_name");
-	ADD_PROPERTY_DEFAULT("backend_name", StringName("llama"));
-	ADD_PROPERTY(PropertyInfo(Variant::STRING, "source_path"), "set_source_path", "get_source_path");
-	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "backend_options"), "set_backend_options", "get_backend_options");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "model_path"), "set_model_path", "get_model_path");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING_NAME, "backend_type"), "set_backend_type", "get_backend_type");
+	ADD_PROPERTY_DEFAULT("backend_type", StringName("llama"));
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "context_size"), "set_context_size", "get_context_size");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "n_threads"), "set_n_threads", "get_n_threads");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "n_gpu_layers"), "set_n_gpu_layers", "get_n_gpu_layers");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "quantization"), "set_quantization", "get_quantization");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "chat_template", PROPERTY_HINT_MULTILINE_TEXT), "set_chat_template", "get_chat_template");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "rope_scaling"), "set_rope_scaling", "get_rope_scaling");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "system_prompt_template", PROPERTY_HINT_MULTILINE_TEXT), "set_system_prompt_template", "get_system_prompt_template");
+	ADD_PROPERTY(PropertyInfo(Variant::PACKED_STRING_ARRAY, "capability_tags"), "set_capability_tags", "get_capability_tags");
+	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "extra_options"), "set_extra_options", "get_extra_options");
 }
 
-void AIModelResource::set_backend_name(const StringName &p_backend_name) {
-	backend_name = p_backend_name;
-}
+#define AI_MODEL_RESOURCE_ACCESSORS(m_type, m_name) \
+	void AIModelResource::set_##m_name(const m_type &p_##m_name) { m_name = p_##m_name; } \
+	m_type AIModelResource::get_##m_name() const { return m_name; }
 
-StringName AIModelResource::get_backend_name() const {
-	return backend_name;
-}
-
-void AIModelResource::set_source_path(const String &p_source_path) {
-	source_path = p_source_path;
-}
-
-String AIModelResource::get_source_path() const {
-	return source_path;
-}
-
-void AIModelResource::set_backend_options(const Dictionary &p_backend_options) {
-	backend_options = p_backend_options;
-}
-
-Dictionary AIModelResource::get_backend_options() const {
-	return backend_options;
-}
+AI_MODEL_RESOURCE_ACCESSORS(String, model_path)
+AI_MODEL_RESOURCE_ACCESSORS(StringName, backend_type)
+AI_MODEL_RESOURCE_ACCESSORS(int32_t, context_size)
+AI_MODEL_RESOURCE_ACCESSORS(int32_t, n_threads)
+AI_MODEL_RESOURCE_ACCESSORS(int32_t, n_gpu_layers)
+AI_MODEL_RESOURCE_ACCESSORS(String, quantization)
+AI_MODEL_RESOURCE_ACCESSORS(String, chat_template)
+AI_MODEL_RESOURCE_ACCESSORS(float, rope_scaling)
+AI_MODEL_RESOURCE_ACCESSORS(String, system_prompt_template)
+AI_MODEL_RESOURCE_ACCESSORS(PackedStringArray, capability_tags)
+AI_MODEL_RESOURCE_ACCESSORS(Dictionary, extra_options)

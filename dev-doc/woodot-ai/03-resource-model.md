@@ -248,6 +248,24 @@ sequenceDiagram
 
 ---
 
+## 11.1 `RES-001` 落地文件
+
+- 资源类：`modules/woodot_ai/resources/ai_model_resource.h`
+- 实现：`modules/woodot_ai/resources/ai_model_resource.cpp`
+- 注册：`modules/woodot_ai/register_types.cpp`
+- 说明文档：`dev-doc/woodot-ai/03-resource-model-ai_model_resource.md`
+
+---
+
+## 11.2 `RES-002` 落地文件
+
+- 资源类：`modules/woodot_ai/resources/ai_tensor_resource.h`
+- 实现：`modules/woodot_ai/resources/ai_tensor_resource.cpp`
+- 注册：`modules/woodot_ai/register_types.cpp`
+- 说明文档：`dev-doc/woodot-ai/03-resource-model-ai_tensor_resource.md`
+
+---
+
 ## 12. 验收标准
 
 1. 资源对象与运行态实例完全解耦
