@@ -1,0 +1,207 @@
+#!/usr/bin/env python
+from misc.utility.scons_hints import *
+
+Import("env")
+Import("env_modules")
+
+env_woodot_ai = env_modules.Clone()
+platform = env["platform"]
+arch = env["arch"]
+
+# Module-wide kill switch. Backend flags must not bypass this.
+if not env["ai_module_enabled"]:
+    Return()
+
+desktop_platforms = ["windows", "linuxbsd", "macos"]
+desktop_enabled = env["woodot_ai_desktop_enabled"] and platform in desktop_platforms
+windows_enabled = platform == "windows" and env["woodot_ai_windows_enabled"]
+linuxbsd_enabled = platform == "linuxbsd" and env["woodot_ai_linuxbsd_enabled"]
+macos_enabled = platform == "macos" and env["woodot_ai_macos_enabled"]
+desktop_platform_enabled = windows_enabled or linuxbsd_enabled or macos_enabled
+android_arm64_enabled = platform == "android" and env["woodot_ai_android_enabled"] and arch == "arm64"
+cpu_backend_enabled = env["woodot_ai_cpu_enabled"]
+llama_platform_supported = (desktop_enabled and desktop_platform_enabled) or android_arm64_enabled
+llama_backend_enabled = env["woodot_ai_llama_enabled"] and cpu_backend_enabled and llama_platform_supported
+
+cpp_defines = ["WOODOT_AI_ENABLED"]
+
+if cpu_backend_enabled:
+    cpp_defines.append("WOODOT_AI_CPU_ENABLED")
+
+if llama_backend_enabled:
+    cpp_defines.append("WOODOT_AI_LLAMA_ENABLED")
+
+if desktop_enabled:
+    cpp_defines.append("WOODOT_AI_DESKTOP_ENABLED")
+
+if windows_enabled:
+    cpp_defines.append("WOODOT_AI_WINDOWS_ENABLED")
+
+if linuxbsd_enabled:
+    cpp_defines.append("WOODOT_AI_LINUXBSD_ENABLED")
+
+if macos_enabled:
+    cpp_defines.append("WOODOT_AI_MACOS_ENABLED")
+
+if env["woodot_ai_vulkan_enabled"]:
+    cpp_defines.append("WOODOT_AI_VULKAN_ENABLED")
+
+if env["woodot_ai_cuda_enabled"]:
+    cpp_defines.append("WOODOT_AI_CUDA_ENABLED")
+
+if env["woodot_ai_metal_enabled"]:
+    cpp_defines.append("WOODOT_AI_METAL_ENABLED")
+
+if platform == "android" and env["woodot_ai_android_enabled"]:
+    cpp_defines.append("WOODOT_AI_ANDROID_ENABLED")
+
+env_woodot_ai.Append(CPPDEFINES=cpp_defines)
+
+
+def _add_llama_common_sources(p_env, p_obj, p_root):
+    ggml_root = p_root + "/ggml/src"
+    llama_root = p_root + "/src"
+
+    ggml_common_sources = [
+        ggml_root + "/ggml.c",
+        ggml_root + "/ggml-alloc.c",
+        ggml_root + "/ggml-backend.cpp",
+        ggml_root + "/ggml-backend-meta.cpp",
+        ggml_root + "/ggml-backend-reg.cpp",
+        ggml_root + "/ggml-opt.cpp",
+        ggml_root + "/ggml-threading.cpp",
+        ggml_root + "/gguf.cpp",
+    ]
+
+    p_env.add_source_files(p_obj, ggml_common_sources)
+    p_env.add_source_files(p_obj, ggml_root + "/ggml-cpu/*.c")
+    p_env.add_source_files(p_obj, llama_root + "/*.cpp")
+    p_env.add_source_files(p_obj, llama_root + "/models/*.cpp")
+
+    # SCons object paths collide when .c and .cpp share the same basename.
+    p_obj.append(p_env.Object(target=ggml_root + "/ggml_cpp", source=ggml_root + "/ggml.cpp"))
+    p_obj.append(p_env.Object(target=ggml_root + "/ggml-cpu/ggml_cpu_cpp", source=ggml_root + "/ggml-cpu/ggml-cpu.cpp"))
+    p_env.add_source_files(p_obj, ggml_root + "/ggml-cpu/binary-ops.cpp")
+    p_env.add_source_files(p_obj, ggml_root + "/ggml-cpu/hbm.cpp")
+    p_env.add_source_files(p_obj, ggml_root + "/ggml-cpu/ops.cpp")
+    p_env.add_source_files(p_obj, ggml_root + "/ggml-cpu/traits.cpp")
+    p_env.add_source_files(p_obj, ggml_root + "/ggml-cpu/unary-ops.cpp")
+    p_env.add_source_files(p_obj, ggml_root + "/ggml-cpu/vec.cpp")
+
+
+def _add_llama_arch_sources(p_env, p_obj, p_root):
+    arch_root = p_root + "/ggml/src/ggml-cpu/arch"
+
+    if arch in ["x86_32", "x86_64"]:
+        p_env.add_source_files(p_obj, arch_root + "/x86/*.c")
+        p_env.add_source_files(p_obj, arch_root + "/x86/*.cpp")
+    elif arch in ["arm32", "arm64"]:
+        p_env.add_source_files(p_obj, arch_root + "/arm/*.c")
+        p_env.add_source_files(p_obj, arch_root + "/arm/*.cpp")
+
+
+def _add_llama_thirdparty():
+    thirdparty_dir = "#modules/woodot_ai/thirdparty/llama.cpp"
+
+    env_woodot_ai.Prepend(
+        CPPPATH=[
+            thirdparty_dir,
+            thirdparty_dir + "/include",
+            thirdparty_dir + "/src",
+            thirdparty_dir + "/ggml/include",
+            thirdparty_dir + "/ggml/src",
+            thirdparty_dir + "/ggml/src/ggml-cpu",
+        ]
+    )
+
+    env_llama = env_woodot_ai.Clone()
+    env_llama.disable_warnings()
+    env_llama.Append(
+        CPPDEFINES=[
+            "GGML_USE_CPU",
+            'GGML_VERSION=\\"0.9.11\\"',
+            'GGML_COMMIT=\\"873c825611d9cb76427931b5e74642bade4853dd\\"',
+        ]
+    )
+
+    if env["disable_exceptions"]:
+        if env_llama.msvc:
+            env_llama.Append(CXXFLAGS=["/EHsc"])
+        elif "-fno-exceptions" in env_llama["CXXFLAGS"]:
+            env_llama["CXXFLAGS"].remove("-fno-exceptions")
+            env_llama.Append(CXXFLAGS=["-fexceptions"])
+
+    if platform == "windows":
+        env_llama.Append(CPPDEFINES=["_CRT_SECURE_NO_WARNINGS"])
+
+    if platform == "macos":
+        env_llama.Append(CPPDEFINES=["GGML_USE_ACCELERATE"])
+        env_llama.Append(LINKFLAGS=["-framework", "Accelerate", "-framework", "Foundation"])
+
+    thirdparty_obj = []
+    _add_llama_common_sources(env_llama, thirdparty_obj, thirdparty_dir)
+    _add_llama_arch_sources(env_llama, thirdparty_obj, thirdparty_dir)
+    env.modules_sources += thirdparty_obj
+    return thirdparty_obj
+
+
+thirdparty_obj = []
+module_obj = []
+
+# Core module sources.
+env_woodot_ai.add_source_files(module_obj, "*.cpp")
+env_woodot_ai.add_source_files(module_obj, "runtime/*.cpp")
+env_woodot_ai.add_source_files(module_obj, "resources/*.cpp")
+env_woodot_ai.add_source_files(module_obj, "import/*.cpp")
+
+# Backend-specific sources stay opt-in behind feature flags.
+if llama_backend_enabled:
+    thirdparty_obj = _add_llama_thirdparty()
+    env_woodot_ai.add_source_files(module_obj, "backends/*.cpp")
+    env_woodot_ai.add_source_files(module_obj, "backends/llama/*.cpp")
+    env_woodot_ai.add_source_files(module_obj, "backends/llama/platform/common/*.cpp")
+
+    if desktop_enabled and desktop_platform_enabled:
+        env_woodot_ai.add_source_files(module_obj, "backends/llama/platform/desktop/*.cpp")
+        if windows_enabled:
+            env_woodot_ai.add_source_files(module_obj, "backends/llama/platform/desktop/windows/*.cpp")
+        elif linuxbsd_enabled:
+            env_woodot_ai.add_source_files(module_obj, "backends/llama/platform/desktop/linuxbsd/*.cpp")
+        elif macos_enabled:
+            env_woodot_ai.add_source_files(module_obj, "backends/llama/platform/desktop/macos/*.cpp")
+    elif android_arm64_enabled:
+        env_woodot_ai.add_source_files(module_obj, "backends/llama/platform/android/*.cpp")
+        env_woodot_ai.add_source_files(module_obj, "backends/llama/platform/android/arm64-v8a/*.cpp")
+
+if env["woodot_ai_vulkan_enabled"]:
+    env_woodot_ai.add_source_files(module_obj, "backends/vulkan/*.cpp")
+
+if env["woodot_ai_cuda_enabled"]:
+    env_woodot_ai.add_source_files(module_obj, "backends/cuda/*.cpp")
+
+if env["woodot_ai_metal_enabled"]:
+    env_woodot_ai.add_source_files(module_obj, "backends/metal/*.mm")
+    env_woodot_ai.add_source_files(module_obj, "backends/metal/*.cpp")
+
+# Keep Android adaptation sources separated from desktop builds.
+if platform == "android" and env["woodot_ai_android_enabled"]:
+    env_woodot_ai.add_source_files(module_obj, "runtime/platform/android/*.cpp")
+    if android_arm64_enabled:
+        env_woodot_ai.add_source_files(module_obj, "runtime/platform/android/arm64-v8a/*.cpp")
+else:
+    if desktop_enabled and desktop_platform_enabled:
+        env_woodot_ai.add_source_files(module_obj, "runtime/platform/desktop/*.cpp")
+        if windows_enabled:
+            env_woodot_ai.add_source_files(module_obj, "runtime/platform/desktop/windows/*.cpp")
+        elif linuxbsd_enabled:
+            env_woodot_ai.add_source_files(module_obj, "runtime/platform/desktop/linuxbsd/*.cpp")
+        elif macos_enabled:
+            env_woodot_ai.add_source_files(module_obj, "runtime/platform/desktop/macos/*.cpp")
+
+if env.editor_build:
+    env_woodot_ai.add_source_files(module_obj, "editor/*.cpp")
+
+if thirdparty_obj:
+    env.Depends(module_obj, thirdparty_obj)
+
+env.modules_sources += module_obj
