@@ -103,6 +103,20 @@ void AITaskScheduler::_process_queued_jobs() {
 			}
 		}
 
+		if (queued_task.job.timeout_ms > 0) {
+			const uint64_t total_runtime_us = delivery.result.queue_wait_us + delivery.result.exec_time_us;
+			const uint64_t timeout_us = static_cast<uint64_t>(queued_task.job.timeout_ms) * 1000;
+			if (total_runtime_us >= timeout_us && !delivery.result.was_cancelled && !delivery.result.timed_out) {
+				delivery.result.code = ERR_TIMEOUT;
+				delivery.result.message = delivery.result.message.is_empty() ? String("Task exceeded timeout budget.") : delivery.result.message;
+				delivery.result.was_cancelled = false;
+				delivery.result.timed_out = true;
+				delivery.result.metadata["timeout_ms"] = queued_task.job.timeout_ms;
+				delivery.result.metadata["timeout_us"] = static_cast<int64_t>(timeout_us);
+				delivery.result.metadata["observed_runtime_us"] = static_cast<int64_t>(total_runtime_us);
+			}
+		}
+
 		result_mailbox.push(delivery);
 	}
 }
@@ -168,6 +182,9 @@ void AITaskScheduler::_apply_delivery(const AIResultMailbox::Delivery &p_deliver
 		running_tasks.erase(job_id);
 	}
 	_record_finish_locked(p_delivery.handle);
+	if (p_delivery.handle.is_valid() && p_delivery.handle->get_cancel_reason() == AITaskHandle::CANCEL_REASON_TIMEOUT) {
+		timeout_jobs++;
+	}
 	profiler.record_completion(p_delivery.result);
 }
 
@@ -250,7 +267,9 @@ Ref<AITaskHandle> AITaskScheduler::submit_completion(AIBackend *p_backend, const
 
 	const AIComputeJob job = _build_completion_job(job_id, p_model_handle, context_result.context_handle, p_public_model_rid, p_request);
 	_enqueue_task(p_backend, context_result.context_handle, handle, job);
-	_process_queued_jobs();
+	if (auto_process_queue) {
+		_process_queued_jobs();
+	}
 	return handle;
 }
 
@@ -286,7 +305,9 @@ Ref<AITaskHandle> AITaskScheduler::submit_embedding(AIBackend *p_backend, const 
 
 	const AIComputeJob job = _build_embedding_job(job_id, p_model_handle, context_result.context_handle, p_public_model_rid, p_request);
 	_enqueue_task(p_backend, context_result.context_handle, handle, job);
-	_process_queued_jobs();
+	if (auto_process_queue) {
+		_process_queued_jobs();
+	}
 	return handle;
 }
 
@@ -320,6 +341,22 @@ void AITaskScheduler::cancel_task(const Ref<AITaskHandle> &p_task_handle) {
 	}
 }
 
+void AITaskScheduler::set_auto_process_queue_enabled(bool p_enabled) {
+	MutexLock lock(mutex);
+	auto_process_queue = p_enabled;
+}
+
+bool AITaskScheduler::is_auto_process_queue_enabled() const {
+	MutexLock lock(mutex);
+	return auto_process_queue;
+}
+
+int32_t AITaskScheduler::process_pending() {
+	const int32_t pending_before = inference_queue.get_pending_count();
+	_process_queued_jobs();
+	return pending_before;
+}
+
 int32_t AITaskScheduler::poll_completed(int32_t p_max_count) {
 	const uint64_t poll_begin_us = OS::get_singleton()->get_ticks_usec();
 	List<AIResultMailbox::Delivery> deliveries;
@@ -340,8 +377,10 @@ Dictionary AITaskScheduler::get_stats() const {
 	stats["running_jobs"] = static_cast<int64_t>(running_tasks.size());
 	stats["cancelled_jobs"] = static_cast<int64_t>(cancelled_jobs);
 	stats["failed_jobs"] = static_cast<int64_t>(failed_jobs);
+	stats["timeout_jobs"] = static_cast<int64_t>(timeout_jobs);
 	stats["completion_jobs"] = static_cast<int64_t>(completion_jobs);
 	stats["embedding_jobs"] = static_cast<int64_t>(embedding_jobs);
+	stats["auto_process_queue"] = auto_process_queue;
 	stats["implementation_stage"] = "queue_mailbox_skeleton";
 	stats["inference_queue"] = inference_queue.get_stats();
 	stats["result_mailbox"] = result_mailbox.get_stats();

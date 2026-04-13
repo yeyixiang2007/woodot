@@ -451,6 +451,24 @@ flowchart TD
 
 ---
 
+## 13.11 `RT-011` 落地文件
+
+- 测试：`modules/woodot_ai/tests/test_ai_runtime.h`
+- timeout 语义补充：`modules/woodot_ai/runtime/ai_backend.h`
+- 句柄取消原因接入：`modules/woodot_ai/runtime/ai_task_handle.cpp`
+- 调度器测试入口与超时判定：`modules/woodot_ai/runtime/ai_task_scheduler.h`
+- 调度器实现：`modules/woodot_ai/runtime/ai_task_scheduler.cpp`
+- 验证记录：`dev-doc/woodot-ai/02-runtime-inference-validation.md`
+
+---
+
+## 13.12 `RT-012` 落地文件
+
+- synthetic soak 测试：`modules/woodot_ai/tests/test_ai_runtime.h`
+- 稳定性记录与压测模板：`dev-doc/woodot-ai/02-runtime-inference-validation.md`
+
+---
+
 ## 14. 验收标准
 
 1. 异步 completion 路径完整可用

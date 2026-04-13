@@ -60,6 +60,15 @@
 - 请求取消
 - 获取统一结果快照
 
+取消原因当前支持：
+
+- `NONE`
+- `USER_REQUEST`
+- `TIMEOUT`
+- `SYSTEM_INTERRUPTED`
+
+其中 `TIMEOUT` 已在 `RT-011` 中接入到 backend result 的应用路径。
+
 ---
 
 ## 5. 当前信号

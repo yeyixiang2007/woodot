@@ -58,8 +58,10 @@ class AITaskScheduler {
 	uint64_t finished_jobs = 0;
 	uint64_t cancelled_jobs = 0;
 	uint64_t failed_jobs = 0;
+	uint64_t timeout_jobs = 0;
 	uint64_t completion_jobs = 0;
 	uint64_t embedding_jobs = 0;
+	bool auto_process_queue = true;
 	AIRuntimeProfiler profiler;
 
 	AIComputeJob _build_completion_job(uint64_t p_job_id, const AIBackendModelHandle &p_model_handle, const AIBackendContextHandle &p_context_handle, const RID &p_public_model_rid, const Ref<AICompletionRequest> &p_request) const;
@@ -73,6 +75,9 @@ public:
 	Ref<AITaskHandle> submit_completion(AIBackend *p_backend, const AIBackendModelHandle &p_model_handle, const RID &p_public_model_rid, const Ref<AICompletionRequest> &p_request);
 	Ref<AITaskHandle> submit_embedding(AIBackend *p_backend, const AIBackendModelHandle &p_model_handle, const RID &p_public_model_rid, const Ref<AIEmbeddingRequest> &p_request);
 	void cancel_task(const Ref<AITaskHandle> &p_task_handle);
+	void set_auto_process_queue_enabled(bool p_enabled);
+	bool is_auto_process_queue_enabled() const;
+	int32_t process_pending();
 	int32_t poll_completed(int32_t p_max_count = -1);
 	Dictionary get_stats() const;
 };

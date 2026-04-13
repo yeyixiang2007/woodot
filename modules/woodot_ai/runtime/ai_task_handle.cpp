@@ -347,6 +347,10 @@ bool AITaskHandle::cancel(CancelReason p_reason, const String &p_message, const 
 }
 
 bool AITaskHandle::apply_backend_result(const AIBackendResult &p_result) {
+	if (p_result.timed_out) {
+		return cancel(CANCEL_REASON_TIMEOUT, p_result.message.is_empty() ? String("Task timed out.") : p_result.message, p_result.metadata);
+	}
+
 	if (p_result.was_cancelled) {
 		bool was_cancel_requested = false;
 		{

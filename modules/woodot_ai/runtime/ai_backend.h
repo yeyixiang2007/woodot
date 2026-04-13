@@ -137,6 +137,7 @@ struct AIBackendResult {
 	bool is_partial = false;
 	bool is_final = true;
 	bool was_cancelled = false;
+	bool timed_out = false;
 	Dictionary metadata;
 
 	_FORCE_INLINE_ bool is_ok() const { return code == OK; }
