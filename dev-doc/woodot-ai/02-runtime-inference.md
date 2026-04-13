@@ -356,6 +356,101 @@ flowchart TD
 
 ---
 
+## 13.1 `RT-001` 落地文件
+
+- 头文件：`modules/woodot_ai/runtime/ai_backend.h`
+- 接口文档：`dev-doc/woodot-ai/02-runtime-inference-ai_backend.md`
+
+---
+
+## 13.2 `RT-002` 落地文件
+
+- 头文件：`modules/woodot_ai/backends/llama/llama_backend.h`
+- 实现：`modules/woodot_ai/backends/llama/llama_backend.cpp`
+- 说明文档：`dev-doc/woodot-ai/02-runtime-inference-llama_backend.md`
+
+---
+
+## 13.3 `RT-003` 落地文件
+
+- 资源类型：`modules/woodot_ai/resources/ai_model_resource.h`
+- registry：`modules/woodot_ai/runtime/ai_backend_registry.h`
+- 服务入口：`modules/woodot_ai/runtime/ai_runtime_server.h`
+- 实现：`modules/woodot_ai/runtime/ai_runtime_server.cpp`
+- 说明文档：`dev-doc/woodot-ai/02-runtime-inference-ai_runtime_server.md`
+
+---
+
+## 13.4 `RT-004` 落地文件
+
+- 句柄类型：`modules/woodot_ai/runtime/ai_task_handle.h`
+- 实现：`modules/woodot_ai/runtime/ai_task_handle.cpp`
+- 说明文档：`dev-doc/woodot-ai/02-runtime-inference-ai_task_handle.md`
+
+---
+
+## 13.5 `RT-005` 落地文件
+
+- 请求类型：`modules/woodot_ai/runtime/ai_requests.h`
+- 实现：`modules/woodot_ai/runtime/ai_requests.cpp`
+- 执行模型补充：`modules/woodot_ai/runtime/ai_backend.h`
+- 说明文档：`dev-doc/woodot-ai/02-runtime-inference-ai_requests.md`
+
+---
+
+## 13.6 `RT-006` 落地文件
+
+- 调度器：`modules/woodot_ai/runtime/ai_task_scheduler.h`
+- 实现：`modules/woodot_ai/runtime/ai_task_scheduler.cpp`
+- server 接入：`modules/woodot_ai/runtime/ai_runtime_server.h`
+- server 实现接入：`modules/woodot_ai/runtime/ai_runtime_server.cpp`
+- 说明文档：`dev-doc/woodot-ai/02-runtime-inference-ai_task_scheduler.md`
+
+---
+
+## 13.7 `RT-007` 落地文件
+
+- 推理队列：`modules/woodot_ai/runtime/ai_inference_queue.h`
+- 实现：`modules/woodot_ai/runtime/ai_inference_queue.cpp`
+- 调度器接入：`modules/woodot_ai/runtime/ai_task_scheduler.h`
+- 调度器实现接入：`modules/woodot_ai/runtime/ai_task_scheduler.cpp`
+- 说明文档：`dev-doc/woodot-ai/02-runtime-inference-ai_inference_queue.md`
+
+---
+
+## 13.8 `RT-008` 落地文件
+
+- 回收邮箱：`modules/woodot_ai/runtime/ai_result_mailbox.h`
+- 实现：`modules/woodot_ai/runtime/ai_result_mailbox.cpp`
+- server 回收入口：`modules/woodot_ai/runtime/ai_runtime_server.cpp`
+- 调度器接入：`modules/woodot_ai/runtime/ai_task_scheduler.h`
+- 调度器实现接入：`modules/woodot_ai/runtime/ai_task_scheduler.cpp`
+- 说明文档：`dev-doc/woodot-ai/02-runtime-inference-ai_result_mailbox.md`
+
+---
+
+## 13.9 `RT-009` 落地文件
+
+- token 聚合器：`modules/woodot_ai/runtime/ai_token_stream.h`
+- 实现：`modules/woodot_ai/runtime/ai_token_stream.cpp`
+- 调度器接入：`modules/woodot_ai/runtime/ai_task_scheduler.h`
+- 调度器实现接入：`modules/woodot_ai/runtime/ai_task_scheduler.cpp`
+- llama backend 接入：`modules/woodot_ai/backends/llama/llama_backend.cpp`
+- 说明文档：`dev-doc/woodot-ai/02-runtime-inference-ai_token_stream.md`
+
+---
+
+## 13.10 `RT-010` 落地文件
+
+- profiling：`modules/woodot_ai/runtime/ai_runtime_profiler.h`
+- 实现：`modules/woodot_ai/runtime/ai_runtime_profiler.cpp`
+- 调度器接入：`modules/woodot_ai/runtime/ai_task_scheduler.h`
+- 调度器实现接入：`modules/woodot_ai/runtime/ai_task_scheduler.cpp`
+- runtime stats 出口：`modules/woodot_ai/runtime/ai_runtime_server.cpp`
+- 说明文档：`dev-doc/woodot-ai/02-runtime-inference-ai_runtime_profiler.md`
+
+---
+
 ## 14. 验收标准
 
 1. 异步 completion 路径完整可用

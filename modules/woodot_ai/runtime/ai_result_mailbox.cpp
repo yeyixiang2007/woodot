@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  register_types.cpp                                                    */
+/*  ai_result_mailbox.cpp                                                 */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -28,51 +28,43 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#include "register_types.h"
+#include "modules/woodot_ai/runtime/ai_result_mailbox.h"
 
-#include "core/config/engine.h"
-#include "core/object/class_db.h"
-#include "modules/woodot_ai/resources/ai_model_resource.h"
-#include "modules/woodot_ai/runtime/ai_requests.h"
-#include "modules/woodot_ai/runtime/ai_task_handle.h"
-#include "modules/woodot_ai/runtime/ai_runtime_server.h"
-
-static AIRuntimeServer *woodot_ai_runtime_server = nullptr;
-
-void initialize_woodot_ai_module(ModuleInitializationLevel p_level) {
-	switch (p_level) {
-		case MODULE_INITIALIZATION_LEVEL_CORE:
-			GDREGISTER_CLASS(AIModelResource);
-			GDREGISTER_CLASS(AICompletionRequest);
-			GDREGISTER_CLASS(AIEmbeddingRequest);
-			GDREGISTER_CLASS(AITaskHandle);
-			GDREGISTER_CLASS(AIRuntimeServer);
-			break;
-		case MODULE_INITIALIZATION_LEVEL_SERVERS: {
-			woodot_ai_runtime_server = memnew(AIRuntimeServer);
-			Engine::get_singleton()->add_singleton(Engine::Singleton("AIRuntimeServer", woodot_ai_runtime_server, "AIRuntimeServer"));
-		} break;
-		case MODULE_INITIALIZATION_LEVEL_SCENE:
-		case MODULE_INITIALIZATION_LEVEL_EDITOR:
-			break;
+void AIResultMailbox::push(const Delivery &p_delivery) {
+	MutexLock lock(mutex);
+	deliveries.push_back(p_delivery);
+	pushed_updates++;
+	const uint64_t pending_count = static_cast<uint64_t>(deliveries.size());
+	if (pending_count > peak_pending) {
+		peak_pending = pending_count;
 	}
 }
 
-void uninitialize_woodot_ai_module(ModuleInitializationLevel p_level) {
-	switch (p_level) {
-		case MODULE_INITIALIZATION_LEVEL_CORE:
-			break;
-		case MODULE_INITIALIZATION_LEVEL_SERVERS:
-			if (woodot_ai_runtime_server != nullptr) {
-				if (Engine::get_singleton()->has_singleton("AIRuntimeServer")) {
-					Engine::get_singleton()->remove_singleton("AIRuntimeServer");
-				}
-				memdelete(woodot_ai_runtime_server);
-				woodot_ai_runtime_server = nullptr;
-			}
-			break;
-		case MODULE_INITIALIZATION_LEVEL_SCENE:
-		case MODULE_INITIALIZATION_LEVEL_EDITOR:
-			break;
+int32_t AIResultMailbox::drain(List<Delivery> &r_deliveries, int32_t p_max_count) {
+	MutexLock lock(mutex);
+
+	int32_t drained = 0;
+	while (!deliveries.is_empty() && (p_max_count < 0 || drained < p_max_count)) {
+		r_deliveries.push_back(deliveries.front()->get());
+		deliveries.pop_front();
+		drained++;
 	}
+
+	drained_updates += static_cast<uint64_t>(drained);
+	return drained;
+}
+
+int32_t AIResultMailbox::get_pending_count() const {
+	MutexLock lock(mutex);
+	return deliveries.size();
+}
+
+Dictionary AIResultMailbox::get_stats() const {
+	Dictionary stats;
+	MutexLock lock(mutex);
+	stats["pending_updates"] = static_cast<int64_t>(deliveries.size());
+	stats["pushed_updates"] = static_cast<int64_t>(pushed_updates);
+	stats["drained_updates"] = static_cast<int64_t>(drained_updates);
+	stats["peak_pending"] = static_cast<int64_t>(peak_pending);
+	return stats;
 }

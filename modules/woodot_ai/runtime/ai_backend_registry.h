@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  register_types.cpp                                                    */
+/*  ai_backend_registry.h                                                 */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -28,51 +28,44 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#include "register_types.h"
+#pragma once
 
-#include "core/config/engine.h"
-#include "core/object/class_db.h"
-#include "modules/woodot_ai/resources/ai_model_resource.h"
-#include "modules/woodot_ai/runtime/ai_requests.h"
-#include "modules/woodot_ai/runtime/ai_task_handle.h"
-#include "modules/woodot_ai/runtime/ai_runtime_server.h"
+#include "modules/woodot_ai/runtime/ai_backend.h"
 
-static AIRuntimeServer *woodot_ai_runtime_server = nullptr;
+#include "core/templates/hash_map.h"
+#include "core/variant/variant.h"
 
-void initialize_woodot_ai_module(ModuleInitializationLevel p_level) {
-	switch (p_level) {
-		case MODULE_INITIALIZATION_LEVEL_CORE:
-			GDREGISTER_CLASS(AIModelResource);
-			GDREGISTER_CLASS(AICompletionRequest);
-			GDREGISTER_CLASS(AIEmbeddingRequest);
-			GDREGISTER_CLASS(AITaskHandle);
-			GDREGISTER_CLASS(AIRuntimeServer);
-			break;
-		case MODULE_INITIALIZATION_LEVEL_SERVERS: {
-			woodot_ai_runtime_server = memnew(AIRuntimeServer);
-			Engine::get_singleton()->add_singleton(Engine::Singleton("AIRuntimeServer", woodot_ai_runtime_server, "AIRuntimeServer"));
-		} break;
-		case MODULE_INITIALIZATION_LEVEL_SCENE:
-		case MODULE_INITIALIZATION_LEVEL_EDITOR:
-			break;
+class AIBackendRegistry {
+	HashMap<StringName, AIBackend *> backends;
+
+public:
+	void register_backend(const StringName &p_name, AIBackend *p_backend) {
+		backends.insert(p_name, p_backend);
 	}
-}
 
-void uninitialize_woodot_ai_module(ModuleInitializationLevel p_level) {
-	switch (p_level) {
-		case MODULE_INITIALIZATION_LEVEL_CORE:
-			break;
-		case MODULE_INITIALIZATION_LEVEL_SERVERS:
-			if (woodot_ai_runtime_server != nullptr) {
-				if (Engine::get_singleton()->has_singleton("AIRuntimeServer")) {
-					Engine::get_singleton()->remove_singleton("AIRuntimeServer");
-				}
-				memdelete(woodot_ai_runtime_server);
-				woodot_ai_runtime_server = nullptr;
-			}
-			break;
-		case MODULE_INITIALIZATION_LEVEL_SCENE:
-		case MODULE_INITIALIZATION_LEVEL_EDITOR:
-			break;
+	void unregister_backend(const StringName &p_name) {
+		backends.erase(p_name);
 	}
-}
+
+	bool has_backend(const StringName &p_name) const {
+		return backends.has(p_name);
+	}
+
+	AIBackend *get_backend(const StringName &p_name) {
+		HashMap<StringName, AIBackend *>::Iterator backend = backends.find(p_name);
+		return backend ? backend->value : nullptr;
+	}
+
+	const AIBackend *get_backend(const StringName &p_name) const {
+		HashMap<StringName, AIBackend *>::ConstIterator backend = backends.find(p_name);
+		return backend ? backend->value : nullptr;
+	}
+
+	PackedStringArray get_backend_names() const {
+		PackedStringArray names;
+		for (const KeyValue<StringName, AIBackend *> &E : backends) {
+			names.push_back(String(E.key));
+		}
+		return names;
+	}
+};

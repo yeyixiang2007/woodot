@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  register_types.cpp                                                    */
+/*  ai_token_stream.h                                                     */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -28,51 +28,46 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#include "register_types.h"
+#pragma once
 
-#include "core/config/engine.h"
-#include "core/object/class_db.h"
-#include "modules/woodot_ai/resources/ai_model_resource.h"
-#include "modules/woodot_ai/runtime/ai_requests.h"
-#include "modules/woodot_ai/runtime/ai_task_handle.h"
-#include "modules/woodot_ai/runtime/ai_runtime_server.h"
+#include "core/variant/dictionary.h"
+#include "core/variant/variant.h"
 
-static AIRuntimeServer *woodot_ai_runtime_server = nullptr;
+class AITokenStream {
+public:
+	struct Config {
+		bool enabled = false;
+		int32_t flush_token_count = 8;
+		int32_t flush_char_count = 96;
+		uint64_t flush_interval_us = 16000;
+	};
 
-void initialize_woodot_ai_module(ModuleInitializationLevel p_level) {
-	switch (p_level) {
-		case MODULE_INITIALIZATION_LEVEL_CORE:
-			GDREGISTER_CLASS(AIModelResource);
-			GDREGISTER_CLASS(AICompletionRequest);
-			GDREGISTER_CLASS(AIEmbeddingRequest);
-			GDREGISTER_CLASS(AITaskHandle);
-			GDREGISTER_CLASS(AIRuntimeServer);
-			break;
-		case MODULE_INITIALIZATION_LEVEL_SERVERS: {
-			woodot_ai_runtime_server = memnew(AIRuntimeServer);
-			Engine::get_singleton()->add_singleton(Engine::Singleton("AIRuntimeServer", woodot_ai_runtime_server, "AIRuntimeServer"));
-		} break;
-		case MODULE_INITIALIZATION_LEVEL_SCENE:
-		case MODULE_INITIALIZATION_LEVEL_EDITOR:
-			break;
-	}
-}
+private:
+	Config config;
+	PackedStringArray pending_tokens;
+	uint64_t total_tokens = 0;
+	uint64_t total_characters = 0;
+	uint64_t flush_count = 0;
+	uint64_t last_push_tick_us = 0;
+	uint64_t last_flush_tick_us = 0;
 
-void uninitialize_woodot_ai_module(ModuleInitializationLevel p_level) {
-	switch (p_level) {
-		case MODULE_INITIALIZATION_LEVEL_CORE:
-			break;
-		case MODULE_INITIALIZATION_LEVEL_SERVERS:
-			if (woodot_ai_runtime_server != nullptr) {
-				if (Engine::get_singleton()->has_singleton("AIRuntimeServer")) {
-					Engine::get_singleton()->remove_singleton("AIRuntimeServer");
-				}
-				memdelete(woodot_ai_runtime_server);
-				woodot_ai_runtime_server = nullptr;
-			}
-			break;
-		case MODULE_INITIALIZATION_LEVEL_SCENE:
-		case MODULE_INITIALIZATION_LEVEL_EDITOR:
-			break;
-	}
-}
+	int32_t _get_pending_character_count() const;
+
+public:
+	void configure(const Config &p_config);
+	const Config &get_config() const;
+
+	bool is_enabled() const;
+	bool has_pending_tokens() const;
+	int32_t get_pending_token_count() const;
+	uint64_t get_total_tokens() const;
+	uint64_t get_flush_count() const;
+
+	void push_tokens(const PackedStringArray &p_tokens, uint64_t p_now_us);
+	bool should_flush(uint64_t p_now_us) const;
+	PackedStringArray flush(uint64_t p_now_us);
+	PackedStringArray finalize(uint64_t p_now_us);
+	void reset();
+
+	Dictionary get_stats() const;
+};

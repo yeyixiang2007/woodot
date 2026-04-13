@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  register_types.cpp                                                    */
+/*  llama_backend.h                                                       */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -28,51 +28,30 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#include "register_types.h"
+#pragma once
 
-#include "core/config/engine.h"
-#include "core/object/class_db.h"
-#include "modules/woodot_ai/resources/ai_model_resource.h"
-#include "modules/woodot_ai/runtime/ai_requests.h"
-#include "modules/woodot_ai/runtime/ai_task_handle.h"
-#include "modules/woodot_ai/runtime/ai_runtime_server.h"
+#include "modules/woodot_ai/runtime/ai_backend.h"
 
-static AIRuntimeServer *woodot_ai_runtime_server = nullptr;
+class LlamaBackend : public AIBackend {
+	struct Data;
 
-void initialize_woodot_ai_module(ModuleInitializationLevel p_level) {
-	switch (p_level) {
-		case MODULE_INITIALIZATION_LEVEL_CORE:
-			GDREGISTER_CLASS(AIModelResource);
-			GDREGISTER_CLASS(AICompletionRequest);
-			GDREGISTER_CLASS(AIEmbeddingRequest);
-			GDREGISTER_CLASS(AITaskHandle);
-			GDREGISTER_CLASS(AIRuntimeServer);
-			break;
-		case MODULE_INITIALIZATION_LEVEL_SERVERS: {
-			woodot_ai_runtime_server = memnew(AIRuntimeServer);
-			Engine::get_singleton()->add_singleton(Engine::Singleton("AIRuntimeServer", woodot_ai_runtime_server, "AIRuntimeServer"));
-		} break;
-		case MODULE_INITIALIZATION_LEVEL_SCENE:
-		case MODULE_INITIALIZATION_LEVEL_EDITOR:
-			break;
-	}
-}
+	Data *data = nullptr;
 
-void uninitialize_woodot_ai_module(ModuleInitializationLevel p_level) {
-	switch (p_level) {
-		case MODULE_INITIALIZATION_LEVEL_CORE:
-			break;
-		case MODULE_INITIALIZATION_LEVEL_SERVERS:
-			if (woodot_ai_runtime_server != nullptr) {
-				if (Engine::get_singleton()->has_singleton("AIRuntimeServer")) {
-					Engine::get_singleton()->remove_singleton("AIRuntimeServer");
-				}
-				memdelete(woodot_ai_runtime_server);
-				woodot_ai_runtime_server = nullptr;
-			}
-			break;
-		case MODULE_INITIALIZATION_LEVEL_SCENE:
-		case MODULE_INITIALIZATION_LEVEL_EDITOR:
-			break;
-	}
-}
+public:
+	LlamaBackend();
+	virtual ~LlamaBackend() override;
+
+	virtual StringName get_backend_name() const override;
+	virtual AIBackendCapabilities get_capabilities() const override;
+
+	virtual AIBackendValidationResult validate_model(const Ref<AIModelResource> &p_model) const override;
+	virtual AIBackendModelLoadResult load_model(const Ref<AIModelResource> &p_model) override;
+	virtual void unload_model(const AIBackendModelHandle &p_model_handle) override;
+
+	virtual AIBackendContextCreateResult create_context(const AIBackendModelHandle &p_model_handle) override;
+	virtual void destroy_context(const AIBackendContextHandle &p_context_handle) override;
+
+	virtual AIBackendResult run_job(const AIComputeJob &p_job) override;
+	virtual bool cancel_job(uint64_t p_job_id) override;
+	virtual Dictionary get_runtime_stats() const override;
+};

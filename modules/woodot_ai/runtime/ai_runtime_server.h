@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  register_types.cpp                                                    */
+/*  ai_runtime_server.h                                                   */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -28,51 +28,45 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#include "register_types.h"
+#pragma once
 
-#include "core/config/engine.h"
-#include "core/object/class_db.h"
-#include "modules/woodot_ai/resources/ai_model_resource.h"
+#include "core/object/object.h"
+#include "core/os/thread_safe.h"
+#include "modules/woodot_ai/runtime/ai_backend_registry.h"
 #include "modules/woodot_ai/runtime/ai_requests.h"
 #include "modules/woodot_ai/runtime/ai_task_handle.h"
-#include "modules/woodot_ai/runtime/ai_runtime_server.h"
 
-static AIRuntimeServer *woodot_ai_runtime_server = nullptr;
+class AIModelResource;
 
-void initialize_woodot_ai_module(ModuleInitializationLevel p_level) {
-	switch (p_level) {
-		case MODULE_INITIALIZATION_LEVEL_CORE:
-			GDREGISTER_CLASS(AIModelResource);
-			GDREGISTER_CLASS(AICompletionRequest);
-			GDREGISTER_CLASS(AIEmbeddingRequest);
-			GDREGISTER_CLASS(AITaskHandle);
-			GDREGISTER_CLASS(AIRuntimeServer);
-			break;
-		case MODULE_INITIALIZATION_LEVEL_SERVERS: {
-			woodot_ai_runtime_server = memnew(AIRuntimeServer);
-			Engine::get_singleton()->add_singleton(Engine::Singleton("AIRuntimeServer", woodot_ai_runtime_server, "AIRuntimeServer"));
-		} break;
-		case MODULE_INITIALIZATION_LEVEL_SCENE:
-		case MODULE_INITIALIZATION_LEVEL_EDITOR:
-			break;
-	}
-}
+class AIRuntimeServer : public Object {
+	GDCLASS(AIRuntimeServer, Object);
+	_THREAD_SAFE_CLASS_
 
-void uninitialize_woodot_ai_module(ModuleInitializationLevel p_level) {
-	switch (p_level) {
-		case MODULE_INITIALIZATION_LEVEL_CORE:
-			break;
-		case MODULE_INITIALIZATION_LEVEL_SERVERS:
-			if (woodot_ai_runtime_server != nullptr) {
-				if (Engine::get_singleton()->has_singleton("AIRuntimeServer")) {
-					Engine::get_singleton()->remove_singleton("AIRuntimeServer");
-				}
-				memdelete(woodot_ai_runtime_server);
-				woodot_ai_runtime_server = nullptr;
-			}
-			break;
-		case MODULE_INITIALIZATION_LEVEL_SCENE:
-		case MODULE_INITIALIZATION_LEVEL_EDITOR:
-			break;
-	}
-}
+	struct Data;
+
+	static AIRuntimeServer *singleton;
+
+	Data *data = nullptr;
+
+protected:
+	static void _bind_methods();
+
+public:
+	static AIRuntimeServer *get_singleton();
+
+	RID load_model(const Ref<AIModelResource> &p_model);
+	void unload_model(const RID &p_model_rid);
+	bool has_model(const RID &p_model_rid) const;
+	Ref<AITaskHandle> submit_completion(const Ref<AICompletionRequest> &p_request);
+	Ref<AITaskHandle> submit_embedding(const Ref<AIEmbeddingRequest> &p_request);
+	void cancel_task(const Ref<AITaskHandle> &p_task_handle);
+
+	Dictionary get_runtime_stats() const;
+	Dictionary get_model_info(const RID &p_model_rid) const;
+	Dictionary get_backend_capabilities(const StringName &p_backend_name) const;
+	PackedStringArray get_registered_backends() const;
+	void poll_completed();
+
+	AIRuntimeServer();
+	~AIRuntimeServer();
+};

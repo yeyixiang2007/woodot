@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  register_types.cpp                                                    */
+/*  ai_inference_queue.cpp                                                */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -28,51 +28,60 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#include "register_types.h"
+#include "modules/woodot_ai/runtime/ai_inference_queue.h"
 
-#include "core/config/engine.h"
-#include "core/object/class_db.h"
-#include "modules/woodot_ai/resources/ai_model_resource.h"
-#include "modules/woodot_ai/runtime/ai_requests.h"
-#include "modules/woodot_ai/runtime/ai_task_handle.h"
-#include "modules/woodot_ai/runtime/ai_runtime_server.h"
-
-static AIRuntimeServer *woodot_ai_runtime_server = nullptr;
-
-void initialize_woodot_ai_module(ModuleInitializationLevel p_level) {
-	switch (p_level) {
-		case MODULE_INITIALIZATION_LEVEL_CORE:
-			GDREGISTER_CLASS(AIModelResource);
-			GDREGISTER_CLASS(AICompletionRequest);
-			GDREGISTER_CLASS(AIEmbeddingRequest);
-			GDREGISTER_CLASS(AITaskHandle);
-			GDREGISTER_CLASS(AIRuntimeServer);
-			break;
-		case MODULE_INITIALIZATION_LEVEL_SERVERS: {
-			woodot_ai_runtime_server = memnew(AIRuntimeServer);
-			Engine::get_singleton()->add_singleton(Engine::Singleton("AIRuntimeServer", woodot_ai_runtime_server, "AIRuntimeServer"));
-		} break;
-		case MODULE_INITIALIZATION_LEVEL_SCENE:
-		case MODULE_INITIALIZATION_LEVEL_EDITOR:
-			break;
+void AIInferenceQueue::enqueue(const QueuedTask &p_task) {
+	MutexLock lock(mutex);
+	pending_tasks.push_back(p_task);
+	enqueued_jobs++;
+	const uint64_t pending_count = static_cast<uint64_t>(pending_tasks.size());
+	if (pending_count > peak_depth) {
+		peak_depth = pending_count;
 	}
 }
 
-void uninitialize_woodot_ai_module(ModuleInitializationLevel p_level) {
-	switch (p_level) {
-		case MODULE_INITIALIZATION_LEVEL_CORE:
-			break;
-		case MODULE_INITIALIZATION_LEVEL_SERVERS:
-			if (woodot_ai_runtime_server != nullptr) {
-				if (Engine::get_singleton()->has_singleton("AIRuntimeServer")) {
-					Engine::get_singleton()->remove_singleton("AIRuntimeServer");
-				}
-				memdelete(woodot_ai_runtime_server);
-				woodot_ai_runtime_server = nullptr;
-			}
-			break;
-		case MODULE_INITIALIZATION_LEVEL_SCENE:
-		case MODULE_INITIALIZATION_LEVEL_EDITOR:
-			break;
+bool AIInferenceQueue::pop_next(QueuedTask &r_task) {
+	MutexLock lock(mutex);
+	if (pending_tasks.is_empty()) {
+		return false;
 	}
+
+	r_task = pending_tasks.front()->get();
+	pending_tasks.pop_front();
+	dequeued_jobs++;
+	return true;
+}
+
+bool AIInferenceQueue::cancel_queued(uint64_t p_job_id, QueuedTask *r_task) {
+	MutexLock lock(mutex);
+	for (List<QueuedTask>::Element *element = pending_tasks.front(); element != nullptr; element = element->next()) {
+		if (element->get().job.job_id != p_job_id) {
+			continue;
+		}
+
+		if (r_task != nullptr) {
+			*r_task = element->get();
+		}
+		pending_tasks.erase(element);
+		cancelled_jobs++;
+		return true;
+	}
+
+	return false;
+}
+
+int32_t AIInferenceQueue::get_pending_count() const {
+	MutexLock lock(mutex);
+	return pending_tasks.size();
+}
+
+Dictionary AIInferenceQueue::get_stats() const {
+	Dictionary stats;
+	MutexLock lock(mutex);
+	stats["pending_jobs"] = static_cast<int64_t>(pending_tasks.size());
+	stats["enqueued_jobs"] = static_cast<int64_t>(enqueued_jobs);
+	stats["dequeued_jobs"] = static_cast<int64_t>(dequeued_jobs);
+	stats["cancelled_jobs"] = static_cast<int64_t>(cancelled_jobs);
+	stats["peak_depth"] = static_cast<int64_t>(peak_depth);
+	return stats;
 }
