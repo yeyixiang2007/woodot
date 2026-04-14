@@ -94,20 +94,24 @@ void AIEmbeddingRequest::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "metadata"), "set_metadata", "get_metadata");
 }
 
-#define AI_REQUEST_ACCESSORS(m_class, m_type, m_name) \
+#define AI_REQUEST_REF_ACCESSORS(m_class, m_type, m_name) \
 	void m_class::set_##m_name(const m_type &p_##m_name) { m_name = p_##m_name; } \
 	m_type m_class::get_##m_name() const { return m_name; }
 
-AI_REQUEST_ACCESSORS(AICompletionRequest, RID, model_rid)
-AI_REQUEST_ACCESSORS(AICompletionRequest, String, prompt)
-AI_REQUEST_ACCESSORS(AICompletionRequest, int32_t, max_tokens)
-AI_REQUEST_ACCESSORS(AICompletionRequest, float, temperature)
-AI_REQUEST_ACCESSORS(AICompletionRequest, float, top_p)
-AI_REQUEST_ACCESSORS(AICompletionRequest, int32_t, top_k)
-AI_REQUEST_ACCESSORS(AICompletionRequest, int32_t, timeout_ms)
-AI_REQUEST_ACCESSORS(AICompletionRequest, int32_t, priority)
-AI_REQUEST_ACCESSORS(AICompletionRequest, String, caller_tag)
-AI_REQUEST_ACCESSORS(AICompletionRequest, Dictionary, metadata)
+#define AI_REQUEST_VALUE_ACCESSORS(m_class, m_type, m_name) \
+	void m_class::set_##m_name(m_type p_##m_name) { m_name = p_##m_name; } \
+	m_type m_class::get_##m_name() const { return m_name; }
+
+AI_REQUEST_REF_ACCESSORS(AICompletionRequest, RID, model_rid)
+AI_REQUEST_REF_ACCESSORS(AICompletionRequest, String, prompt)
+AI_REQUEST_VALUE_ACCESSORS(AICompletionRequest, int32_t, max_tokens)
+AI_REQUEST_VALUE_ACCESSORS(AICompletionRequest, float, temperature)
+AI_REQUEST_VALUE_ACCESSORS(AICompletionRequest, float, top_p)
+AI_REQUEST_VALUE_ACCESSORS(AICompletionRequest, int32_t, top_k)
+AI_REQUEST_VALUE_ACCESSORS(AICompletionRequest, int32_t, timeout_ms)
+AI_REQUEST_VALUE_ACCESSORS(AICompletionRequest, int32_t, priority)
+AI_REQUEST_REF_ACCESSORS(AICompletionRequest, String, caller_tag)
+AI_REQUEST_REF_ACCESSORS(AICompletionRequest, Dictionary, metadata)
 
 void AICompletionRequest::set_stream(bool p_stream) {
 	stream = p_stream;
@@ -117,12 +121,12 @@ bool AICompletionRequest::is_streaming() const {
 	return stream;
 }
 
-AI_REQUEST_ACCESSORS(AIEmbeddingRequest, RID, model_rid)
-AI_REQUEST_ACCESSORS(AIEmbeddingRequest, PackedStringArray, inputs)
-AI_REQUEST_ACCESSORS(AIEmbeddingRequest, int32_t, timeout_ms)
-AI_REQUEST_ACCESSORS(AIEmbeddingRequest, int32_t, priority)
-AI_REQUEST_ACCESSORS(AIEmbeddingRequest, String, caller_tag)
-AI_REQUEST_ACCESSORS(AIEmbeddingRequest, Dictionary, metadata)
+AI_REQUEST_REF_ACCESSORS(AIEmbeddingRequest, RID, model_rid)
+AI_REQUEST_REF_ACCESSORS(AIEmbeddingRequest, PackedStringArray, inputs)
+AI_REQUEST_VALUE_ACCESSORS(AIEmbeddingRequest, int32_t, timeout_ms)
+AI_REQUEST_VALUE_ACCESSORS(AIEmbeddingRequest, int32_t, priority)
+AI_REQUEST_REF_ACCESSORS(AIEmbeddingRequest, String, caller_tag)
+AI_REQUEST_REF_ACCESSORS(AIEmbeddingRequest, Dictionary, metadata)
 
 void AIEmbeddingRequest::set_normalize(bool p_normalize) {
 	normalize = p_normalize;

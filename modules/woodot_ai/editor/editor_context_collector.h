@@ -31,25 +31,48 @@
 #pragma once
 
 #include "core/object/object.h"
+#include "core/variant/type_info.h"
 
 class Node;
 
 class EditorContextCollector : public Object {
 	GDCLASS(EditorContextCollector, Object);
 
-	static constexpr int32_t SCENE_NODE_BUDGET = 64;
-	static constexpr int32_t SCENE_DEPTH_BUDGET = 4;
-	static constexpr int32_t SELECTION_BUDGET = 16;
-	static constexpr int32_t TEXT_PREVIEW_BUDGET = 2000;
+public:
+	struct ContextBudget {
+		int32_t scene_node_budget = 0;
+		int32_t scene_depth_budget = 0;
+		int32_t selection_budget = 0;
+		int32_t text_preview_budget = 0;
+	};
 
+	enum BudgetProfile {
+		BUDGET_PROFILE_SCENE_SYNTHESIS = 0,
+		BUDGET_PROFILE_SCRIPT_REPAIR,
+	};
+
+private:
 	static EditorContextCollector *singleton;
+	static constexpr int32_t MIN_SCENE_NODE_BUDGET = 0;
+	static constexpr int32_t MAX_SCENE_NODE_BUDGET = 512;
+	static constexpr int32_t MIN_SCENE_DEPTH_BUDGET = 0;
+	static constexpr int32_t MAX_SCENE_DEPTH_BUDGET = 8;
+	static constexpr int32_t MIN_SELECTION_BUDGET = 0;
+	static constexpr int32_t MAX_SELECTION_BUDGET = 64;
+	static constexpr int32_t MIN_TEXT_PREVIEW_BUDGET = 0;
+	static constexpr int32_t MAX_TEXT_PREVIEW_BUDGET = 16000;
 
-	Dictionary _build_scene_context() const;
-	Dictionary _build_script_context(const String &p_script_path, const String &p_diagnostics, const String &p_code_snippet) const;
+	ContextBudget scene_synthesis_budget;
+	ContextBudget script_repair_budget;
+
+	ContextBudget _sanitize_budget(const Dictionary &p_budget, const ContextBudget &p_fallback) const;
+	Dictionary _serialize_budget(const ContextBudget &p_budget) const;
+	Dictionary _build_scene_context(const ContextBudget &p_budget) const;
+	Dictionary _build_script_context(const String &p_script_path, const String &p_diagnostics, const String &p_code_snippet, const ContextBudget &p_budget) const;
 	Dictionary _build_project_context() const;
 	Dictionary _build_budget_info() const;
-	Dictionary _snapshot_node(Node *p_node, int32_t p_depth, int32_t &r_remaining_budget) const;
-	Array _snapshot_selection() const;
+	Dictionary _snapshot_node(Node *p_node, int32_t p_depth, int32_t &r_remaining_budget, const ContextBudget &p_budget) const;
+	Array _snapshot_selection(const ContextBudget &p_budget) const;
 	String _load_script_snippet(const String &p_script_path) const;
 	String _truncate_text(const String &p_text, int32_t p_limit) const;
 	Dictionary _merge_context(const Dictionary &p_base, const Dictionary &p_overrides) const;
@@ -61,6 +84,10 @@ public:
 	static EditorContextCollector *get_singleton();
 
 	bool has_editor_interface() const;
+	void set_scene_synthesis_budget(const Dictionary &p_budget);
+	Dictionary get_scene_synthesis_budget() const;
+	void set_script_repair_budget(const Dictionary &p_budget);
+	Dictionary get_script_repair_budget() const;
 	Dictionary collect_scene_request_context(const Dictionary &p_overrides = Dictionary()) const;
 	Dictionary collect_script_repair_context(const String &p_script_path, const String &p_diagnostics, const String &p_code_snippet = String(), const Dictionary &p_overrides = Dictionary()) const;
 	Dictionary get_collector_status() const;
@@ -68,3 +95,5 @@ public:
 	EditorContextCollector();
 	~EditorContextCollector();
 };
+
+VARIANT_ENUM_CAST(EditorContextCollector::BudgetProfile);

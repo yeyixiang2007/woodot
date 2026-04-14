@@ -31,18 +31,34 @@
 
 ## 4. Budget 策略
 
-当前 collector 内置静态预算：
+当前 collector 按请求类型区分两套 budget profile：
 
-- `scene_node_budget = 64`
-- `scene_depth_budget = 4`
-- `selection_budget = 16`
-- `text_preview_budget = 2000`
+- `scene_synthesis`
+- `script_repair`
+
+默认配置：
+
+- `scene_synthesis.scene_node_budget = 64`
+- `scene_synthesis.scene_depth_budget = 4`
+- `scene_synthesis.selection_budget = 16`
+- `scene_synthesis.text_preview_budget = 2000`
+- `script_repair.scene_node_budget = 24`
+- `script_repair.scene_depth_budget = 2`
+- `script_repair.selection_budget = 8`
+- `script_repair.text_preview_budget = 4000`
+
+策略意图：
+
+- 场景生成更依赖结构信息，因此给更大的 scene tree 和 selection 配额
+- 脚本修复更依赖诊断和代码片段，因此压缩 scene tree，放宽文本预览配额
 
 超出预算时的处理方式：
 
 - 场景树停止继续下探，并标记 `children_truncated`
 - 文本内容按字符截断，并追加 `...[truncated]`
 - 选择快照只保留前 `selection_budget` 个节点
+
+当前还支持通过 `scene_synthesis_budget` 和 `script_repair_budget` 属性进行运行时调整，collector 会把输入值钳制到安全区间。
 
 ---
 
@@ -65,7 +81,7 @@
 
 ## 7. 后续可扩展点
 
-- 把 budget 配置外提到 `ED-003`
+- 把 budget 持久化到 editor settings 或 project settings
 - 增加资源依赖摘要和当前脚本 tab 信息
 - 对稳定上下文做缓存，减少重复组包成本
 - 为不同请求类型定义更细粒度的字段白名单

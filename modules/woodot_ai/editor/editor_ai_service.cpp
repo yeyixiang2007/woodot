@@ -31,8 +31,14 @@
 #include "modules/woodot_ai/editor/editor_ai_service.h"
 
 #include "core/object/class_db.h"
+#include "modules/woodot_ai/editor/editor_ai_preview_diff.h"
 #include "modules/woodot_ai/editor/editor_context_collector.h"
+#include "modules/woodot_ai/editor/gdscript_repair_engine.h"
+#include "modules/woodot_ai/editor/node_graph_intent_parser.h"
+#include "modules/woodot_ai/editor/undo_redo_bridge.h"
 #include "modules/woodot_ai/resources/ai_model_resource.h"
+#include "modules/woodot_ai/resources/gdscript_repair_patch.h"
+#include "modules/woodot_ai/resources/scene_synthesis_plan.h"
 #include "modules/woodot_ai/runtime/ai_requests.h"
 #include "modules/woodot_ai/runtime/ai_runtime_server.h"
 
@@ -44,11 +50,27 @@ void EditorAIService::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("has_runtime_server"), &EditorAIService::has_runtime_server);
 	ClassDB::bind_method(D_METHOD("is_ready"), &EditorAIService::is_ready);
 	ClassDB::bind_method(D_METHOD("has_context_collector"), &EditorAIService::has_context_collector);
+	ClassDB::bind_method(D_METHOD("has_gdscript_repair_engine"), &EditorAIService::has_gdscript_repair_engine);
+	ClassDB::bind_method(D_METHOD("has_node_graph_intent_parser"), &EditorAIService::has_node_graph_intent_parser);
+	ClassDB::bind_method(D_METHOD("has_preview_diff"), &EditorAIService::has_preview_diff);
+	ClassDB::bind_method(D_METHOD("has_undo_redo_bridge"), &EditorAIService::has_undo_redo_bridge);
 	ClassDB::bind_method(D_METHOD("has_loaded_default_model"), &EditorAIService::has_loaded_default_model);
 	ClassDB::bind_method(D_METHOD("ensure_default_model_loaded"), &EditorAIService::ensure_default_model_loaded);
 	ClassDB::bind_method(D_METHOD("unload_default_model"), &EditorAIService::unload_default_model);
 	ClassDB::bind_method(D_METHOD("collect_scene_request_context", "overrides"), &EditorAIService::collect_scene_request_context, DEFVAL(Dictionary()));
 	ClassDB::bind_method(D_METHOD("collect_script_repair_context", "script_path", "diagnostics", "code_snippet", "overrides"), &EditorAIService::collect_script_repair_context, DEFVAL(String()), DEFVAL(Dictionary()));
+	ClassDB::bind_method(D_METHOD("validate_gdscript_patch_ir", "source_ir"), &EditorAIService::validate_gdscript_patch_ir);
+	ClassDB::bind_method(D_METHOD("parse_gdscript_patch_ir", "source_ir", "script_path", "diagnostic_message", "metadata"), &EditorAIService::parse_gdscript_patch_ir, DEFVAL(String()), DEFVAL(String()), DEFVAL(Dictionary()));
+	ClassDB::bind_method(D_METHOD("validate_scene_plan_ir", "source_ir"), &EditorAIService::validate_scene_plan_ir);
+	ClassDB::bind_method(D_METHOD("parse_scene_plan_ir", "source_ir", "prompt", "metadata"), &EditorAIService::parse_scene_plan_ir, DEFVAL(String()), DEFVAL(Dictionary()));
+	ClassDB::bind_method(D_METHOD("build_scene_plan_preview", "plan"), &EditorAIService::build_scene_plan_preview);
+	ClassDB::bind_method(D_METHOD("build_gdscript_patch_preview", "patch"), &EditorAIService::build_gdscript_patch_preview);
+	ClassDB::bind_method(D_METHOD("can_apply_scene_plan", "plan"), &EditorAIService::can_apply_scene_plan);
+	ClassDB::bind_method(D_METHOD("apply_scene_plan", "plan"), &EditorAIService::apply_scene_plan);
+	ClassDB::bind_method(D_METHOD("can_apply_gdscript_patch", "patch"), &EditorAIService::can_apply_gdscript_patch);
+	ClassDB::bind_method(D_METHOD("apply_gdscript_patch", "patch"), &EditorAIService::apply_gdscript_patch);
+	ClassDB::bind_method(D_METHOD("resolve_scene_synthesis_task", "task_handle", "prompt", "metadata"), &EditorAIService::resolve_scene_synthesis_task, DEFVAL(String()), DEFVAL(Dictionary()));
+	ClassDB::bind_method(D_METHOD("resolve_script_repair_task", "task_handle", "script_path", "diagnostic_message", "metadata"), &EditorAIService::resolve_script_repair_task, DEFVAL(String()), DEFVAL(String()), DEFVAL(Dictionary()));
 	ClassDB::bind_method(D_METHOD("request_scene_synthesis", "prompt", "context"), &EditorAIService::request_scene_synthesis, DEFVAL(Dictionary()));
 	ClassDB::bind_method(D_METHOD("request_script_repair", "script_path", "diagnostics", "code_snippet", "context"), &EditorAIService::request_script_repair, DEFVAL(String()), DEFVAL(Dictionary()));
 	ClassDB::bind_method(D_METHOD("cancel_task", "task_handle"), &EditorAIService::cancel_task);
@@ -102,6 +124,22 @@ bool EditorAIService::is_ready() const {
 
 bool EditorAIService::has_context_collector() const {
 	return EditorContextCollector::get_singleton() != nullptr;
+}
+
+bool EditorAIService::has_gdscript_repair_engine() const {
+	return GDScriptRepairEngine::get_singleton() != nullptr;
+}
+
+bool EditorAIService::has_node_graph_intent_parser() const {
+	return NodeGraphIntentParser::get_singleton() != nullptr;
+}
+
+bool EditorAIService::has_preview_diff() const {
+	return EditorAIPreviewDiff::get_singleton() != nullptr;
+}
+
+bool EditorAIService::has_undo_redo_bridge() const {
+	return UndoRedoBridge::get_singleton() != nullptr;
 }
 
 bool EditorAIService::has_loaded_default_model() const {
@@ -160,6 +198,250 @@ Dictionary EditorAIService::collect_script_repair_context(const String &p_script
 	}
 
 	return EditorContextCollector::get_singleton()->collect_script_repair_context(p_script_path, p_diagnostics, p_code_snippet, p_overrides);
+}
+
+Dictionary EditorAIService::validate_gdscript_patch_ir(const String &p_source_ir) const {
+	if (!has_gdscript_repair_engine()) {
+		Dictionary status;
+		Array errors;
+		status["valid"] = false;
+		errors.push_back("GDScriptRepairEngine is unavailable.");
+		status["errors"] = errors;
+		status["warnings"] = Array();
+		return status;
+	}
+
+	return GDScriptRepairEngine::get_singleton()->validate_patch_ir(p_source_ir);
+}
+
+Ref<GDScriptRepairPatch> EditorAIService::parse_gdscript_patch_ir(const String &p_source_ir, const String &p_script_path, const String &p_diagnostic_message, const Dictionary &p_metadata) const {
+	if (!has_gdscript_repair_engine()) {
+		return Ref<GDScriptRepairPatch>();
+	}
+
+	return GDScriptRepairEngine::get_singleton()->parse_patch_ir(p_source_ir, p_script_path, p_diagnostic_message, p_metadata);
+}
+
+Dictionary EditorAIService::validate_scene_plan_ir(const String &p_source_ir) const {
+	if (!has_node_graph_intent_parser()) {
+		Dictionary status;
+		Array errors;
+		status["valid"] = false;
+		errors.push_back("NodeGraphIntentParser is unavailable.");
+		status["errors"] = errors;
+		status["warnings"] = Array();
+		return status;
+	}
+
+	return NodeGraphIntentParser::get_singleton()->validate_scene_plan_ir(p_source_ir);
+}
+
+Ref<SceneSynthesisPlan> EditorAIService::parse_scene_plan_ir(const String &p_source_ir, const String &p_prompt, const Dictionary &p_metadata) const {
+	if (!has_node_graph_intent_parser()) {
+		return Ref<SceneSynthesisPlan>();
+	}
+
+	return NodeGraphIntentParser::get_singleton()->parse_scene_plan_ir(p_source_ir, p_prompt, p_metadata);
+}
+
+Dictionary EditorAIService::build_scene_plan_preview(const Ref<SceneSynthesisPlan> &p_plan) const {
+	if (!has_preview_diff()) {
+		Dictionary preview;
+		Array warnings;
+		warnings.push_back("EditorAIPreviewDiff is unavailable.");
+		preview["kind"] = "scene_plan";
+		preview["summary"] = "Preview service unavailable.";
+		preview["can_apply"] = false;
+		preview["warnings"] = warnings;
+		preview["items"] = Array();
+		return preview;
+	}
+
+	const Dictionary preview = EditorAIPreviewDiff::get_singleton()->build_scene_plan_preview(p_plan);
+	EditorAIPreviewDiff::get_singleton()->set_current_preview(preview);
+	return preview;
+}
+
+Dictionary EditorAIService::build_gdscript_patch_preview(const Ref<GDScriptRepairPatch> &p_patch) const {
+	if (!has_preview_diff()) {
+		Dictionary preview;
+		Array warnings;
+		warnings.push_back("EditorAIPreviewDiff is unavailable.");
+		preview["kind"] = "gdscript_patch";
+		preview["summary"] = "Preview service unavailable.";
+		preview["can_apply"] = false;
+		preview["warnings"] = warnings;
+		preview["items"] = Array();
+		return preview;
+	}
+
+	const Dictionary preview = EditorAIPreviewDiff::get_singleton()->build_gdscript_patch_preview(p_patch);
+	EditorAIPreviewDiff::get_singleton()->set_current_preview(preview);
+	return preview;
+}
+
+Dictionary EditorAIService::can_apply_scene_plan(const Ref<SceneSynthesisPlan> &p_plan) const {
+	if (!has_undo_redo_bridge()) {
+		Dictionary status;
+		status["ok"] = false;
+		status["can_apply"] = false;
+		status["error"] = ERR_UNAVAILABLE;
+		status["message"] = "UndoRedoBridge is unavailable.";
+		return status;
+	}
+
+	return UndoRedoBridge::get_singleton()->can_apply_scene_plan(p_plan);
+}
+
+Dictionary EditorAIService::apply_scene_plan(const Ref<SceneSynthesisPlan> &p_plan) {
+	if (!has_undo_redo_bridge()) {
+		Dictionary status;
+		status["ok"] = false;
+		status["can_apply"] = false;
+		status["error"] = ERR_UNAVAILABLE;
+		status["message"] = "UndoRedoBridge is unavailable.";
+		return status;
+	}
+
+	return UndoRedoBridge::get_singleton()->apply_scene_plan(p_plan);
+}
+
+Dictionary EditorAIService::can_apply_gdscript_patch(const Ref<GDScriptRepairPatch> &p_patch) const {
+	if (!has_undo_redo_bridge()) {
+		Dictionary status;
+		status["ok"] = false;
+		status["can_apply"] = false;
+		status["error"] = ERR_UNAVAILABLE;
+		status["message"] = "UndoRedoBridge is unavailable.";
+		return status;
+	}
+
+	return UndoRedoBridge::get_singleton()->can_apply_gdscript_patch(p_patch);
+}
+
+Dictionary EditorAIService::apply_gdscript_patch(const Ref<GDScriptRepairPatch> &p_patch) {
+	if (!has_undo_redo_bridge()) {
+		Dictionary status;
+		status["ok"] = false;
+		status["can_apply"] = false;
+		status["error"] = ERR_UNAVAILABLE;
+		status["message"] = "UndoRedoBridge is unavailable.";
+		return status;
+	}
+
+	return UndoRedoBridge::get_singleton()->apply_gdscript_patch(p_patch);
+}
+
+Dictionary EditorAIService::resolve_scene_synthesis_task(const Ref<AITaskHandle> &p_task_handle, const String &p_prompt, const Dictionary &p_metadata) const {
+	Dictionary result;
+	result["ok"] = false;
+	result["plan"] = Variant();
+	result["preview"] = Dictionary();
+	result["apply_status"] = Dictionary();
+
+	if (p_task_handle.is_null()) {
+		result["message"] = "Scene synthesis task handle is null.";
+		return result;
+	}
+	if (!p_task_handle->is_finished_successfully()) {
+		result["message"] = "Scene synthesis task did not complete successfully.";
+		result["task"] = p_task_handle->get_result_snapshot();
+		return result;
+	}
+
+	const String source_ir = p_task_handle->get_final_text();
+	if (source_ir.strip_edges().is_empty()) {
+		result["message"] = "Scene synthesis task returned empty IR.";
+		result["task"] = p_task_handle->get_result_snapshot();
+		return result;
+	}
+
+	Dictionary merged_metadata = p_task_handle->get_metadata();
+	const Array metadata_keys = p_metadata.keys();
+	for (int32_t i = 0; i < metadata_keys.size(); i++) {
+		merged_metadata[metadata_keys[i]] = p_metadata[metadata_keys[i]];
+	}
+
+	const Dictionary validation = validate_scene_plan_ir(source_ir);
+	result["validation"] = validation;
+	if (!(validation.has("valid") && bool(validation["valid"]))) {
+		result["message"] = "Scene synthesis IR validation failed.";
+		result["task"] = p_task_handle->get_result_snapshot();
+		return result;
+	}
+
+	const Ref<SceneSynthesisPlan> plan = parse_scene_plan_ir(source_ir, p_prompt, merged_metadata);
+	if (plan.is_null()) {
+		result["message"] = "Scene synthesis IR could not be parsed into a plan.";
+		result["task"] = p_task_handle->get_result_snapshot();
+		return result;
+	}
+
+	result["ok"] = true;
+	result["message"] = "Scene synthesis task resolved successfully.";
+	result["plan"] = plan;
+	result["preview"] = build_scene_plan_preview(plan);
+	result["apply_status"] = can_apply_scene_plan(plan);
+	result["task"] = p_task_handle->get_result_snapshot();
+	return result;
+}
+
+Dictionary EditorAIService::resolve_script_repair_task(const Ref<AITaskHandle> &p_task_handle, const String &p_script_path, const String &p_diagnostic_message, const Dictionary &p_metadata) const {
+	Dictionary result;
+	result["ok"] = false;
+	result["patch"] = Variant();
+	result["preview"] = Dictionary();
+	result["apply_status"] = Dictionary();
+
+	if (p_task_handle.is_null()) {
+		result["message"] = "Script repair task handle is null.";
+		return result;
+	}
+	if (!p_task_handle->is_finished_successfully()) {
+		result["message"] = "Script repair task did not complete successfully.";
+		result["task"] = p_task_handle->get_result_snapshot();
+		return result;
+	}
+
+	const String source_ir = p_task_handle->get_final_text();
+	if (source_ir.strip_edges().is_empty()) {
+		result["message"] = "Script repair task returned empty IR.";
+		result["task"] = p_task_handle->get_result_snapshot();
+		return result;
+	}
+
+	Dictionary task_metadata = p_task_handle->get_metadata();
+	Dictionary merged_metadata = task_metadata;
+	const Array metadata_keys = p_metadata.keys();
+	for (int32_t i = 0; i < metadata_keys.size(); i++) {
+		merged_metadata[metadata_keys[i]] = p_metadata[metadata_keys[i]];
+	}
+
+	const String resolved_script_path = !p_script_path.is_empty() ? p_script_path : (task_metadata.has("script_path") ? String(task_metadata["script_path"]) : String());
+	const String resolved_diagnostic = !p_diagnostic_message.is_empty() ? p_diagnostic_message : (task_metadata.has("diagnostics") ? String(task_metadata["diagnostics"]) : String());
+
+	const Dictionary validation = validate_gdscript_patch_ir(source_ir);
+	result["validation"] = validation;
+	if (!(validation.has("valid") && bool(validation["valid"]))) {
+		result["message"] = "Script repair IR validation failed.";
+		result["task"] = p_task_handle->get_result_snapshot();
+		return result;
+	}
+
+	const Ref<GDScriptRepairPatch> patch = parse_gdscript_patch_ir(source_ir, resolved_script_path, resolved_diagnostic, merged_metadata);
+	if (patch.is_null()) {
+		result["message"] = "Script repair IR could not be parsed into a patch.";
+		result["task"] = p_task_handle->get_result_snapshot();
+		return result;
+	}
+
+	result["ok"] = true;
+	result["message"] = "Script repair task resolved successfully.";
+	result["patch"] = patch;
+	result["preview"] = build_gdscript_patch_preview(patch);
+	result["apply_status"] = can_apply_gdscript_patch(patch);
+	result["task"] = p_task_handle->get_result_snapshot();
+	return result;
 }
 
 Ref<AITaskHandle> EditorAIService::request_scene_synthesis(const String &p_prompt, const Dictionary &p_context) {
@@ -257,12 +539,20 @@ Dictionary EditorAIService::get_service_status() const {
 	status["ready"] = is_ready();
 	status["has_runtime_server"] = has_runtime_server();
 	status["has_context_collector"] = has_context_collector();
+	status["has_gdscript_repair_engine"] = has_gdscript_repair_engine();
+	status["has_node_graph_intent_parser"] = has_node_graph_intent_parser();
+	status["has_preview_diff"] = has_preview_diff();
+	status["has_undo_redo_bridge"] = has_undo_redo_bridge();
 	status["has_default_model"] = default_model.is_valid();
 	status["has_loaded_default_model"] = has_loaded_default_model();
 	status["default_model_rid"] = default_model_rid;
 	status["submitted_scene_requests"] = static_cast<int64_t>(submitted_scene_requests);
 	status["submitted_script_repairs"] = static_cast<int64_t>(submitted_script_repairs);
 	status["collector_status"] = has_context_collector() ? EditorContextCollector::get_singleton()->get_collector_status() : Dictionary();
+	status["repair_engine_status"] = has_gdscript_repair_engine() ? GDScriptRepairEngine::get_singleton()->get_engine_status() : Dictionary();
+	status["scene_parser_status"] = has_node_graph_intent_parser() ? NodeGraphIntentParser::get_singleton()->get_parser_status() : Dictionary();
+	status["preview_status"] = has_preview_diff() ? EditorAIPreviewDiff::get_singleton()->get_current_preview() : Dictionary();
+	status["undo_redo_status"] = has_undo_redo_bridge() ? UndoRedoBridge::get_singleton()->get_bridge_status() : Dictionary();
 	status["runtime_stats"] = has_runtime_server() ? _get_runtime_server()->get_runtime_stats() : Dictionary();
 	return status;
 }

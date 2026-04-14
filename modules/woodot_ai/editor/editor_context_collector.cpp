@@ -33,6 +33,7 @@
 #include "core/config/project_settings.h"
 #include "core/io/file_access.h"
 #include "core/object/class_db.h"
+#include "editor/editor_data.h"
 #include "editor/editor_interface.h"
 #include "scene/main/node.h"
 
@@ -40,9 +41,19 @@ EditorContextCollector *EditorContextCollector::singleton = nullptr;
 
 void EditorContextCollector::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("has_editor_interface"), &EditorContextCollector::has_editor_interface);
+	ClassDB::bind_method(D_METHOD("set_scene_synthesis_budget", "budget"), &EditorContextCollector::set_scene_synthesis_budget);
+	ClassDB::bind_method(D_METHOD("get_scene_synthesis_budget"), &EditorContextCollector::get_scene_synthesis_budget);
+	ClassDB::bind_method(D_METHOD("set_script_repair_budget", "budget"), &EditorContextCollector::set_script_repair_budget);
+	ClassDB::bind_method(D_METHOD("get_script_repair_budget"), &EditorContextCollector::get_script_repair_budget);
 	ClassDB::bind_method(D_METHOD("collect_scene_request_context", "overrides"), &EditorContextCollector::collect_scene_request_context, DEFVAL(Dictionary()));
 	ClassDB::bind_method(D_METHOD("collect_script_repair_context", "script_path", "diagnostics", "code_snippet", "overrides"), &EditorContextCollector::collect_script_repair_context, DEFVAL(String()), DEFVAL(Dictionary()));
 	ClassDB::bind_method(D_METHOD("get_collector_status"), &EditorContextCollector::get_collector_status);
+
+	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "scene_synthesis_budget"), "set_scene_synthesis_budget", "get_scene_synthesis_budget");
+	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "script_repair_budget"), "set_script_repair_budget", "get_script_repair_budget");
+
+	BIND_ENUM_CONSTANT(BUDGET_PROFILE_SCENE_SYNTHESIS);
+	BIND_ENUM_CONSTANT(BUDGET_PROFILE_SCRIPT_REPAIR);
 }
 
 EditorContextCollector *EditorContextCollector::get_singleton() {
@@ -53,13 +64,31 @@ bool EditorContextCollector::has_editor_interface() const {
 	return EditorInterface::get_singleton() != nullptr;
 }
 
+void EditorContextCollector::set_scene_synthesis_budget(const Dictionary &p_budget) {
+	scene_synthesis_budget = _sanitize_budget(p_budget, scene_synthesis_budget);
+}
+
+Dictionary EditorContextCollector::get_scene_synthesis_budget() const {
+	return _serialize_budget(scene_synthesis_budget);
+}
+
+void EditorContextCollector::set_script_repair_budget(const Dictionary &p_budget) {
+	script_repair_budget = _sanitize_budget(p_budget, script_repair_budget);
+}
+
+Dictionary EditorContextCollector::get_script_repair_budget() const {
+	return _serialize_budget(script_repair_budget);
+}
+
 Dictionary EditorContextCollector::collect_scene_request_context(const Dictionary &p_overrides) const {
 	Dictionary context = _build_project_context();
 	context["context_format_version"] = 1;
 	context["collector"] = "EditorContextCollector";
 	context["request_kind"] = "scene_synthesis";
-	context["scene"] = _build_scene_context();
-	context["budget"] = _build_budget_info();
+	context["budget_profile"] = BUDGET_PROFILE_SCENE_SYNTHESIS;
+	context["scene"] = _build_scene_context(scene_synthesis_budget);
+	context["budget"] = _serialize_budget(scene_synthesis_budget);
+	context["budget_policy"] = _build_budget_info();
 	return _merge_context(context, p_overrides);
 }
 
@@ -68,9 +97,11 @@ Dictionary EditorContextCollector::collect_script_repair_context(const String &p
 	context["context_format_version"] = 1;
 	context["collector"] = "EditorContextCollector";
 	context["request_kind"] = "script_repair";
-	context["scene"] = _build_scene_context();
-	context["script"] = _build_script_context(p_script_path, p_diagnostics, p_code_snippet);
-	context["budget"] = _build_budget_info();
+	context["budget_profile"] = BUDGET_PROFILE_SCRIPT_REPAIR;
+	context["scene"] = _build_scene_context(script_repair_budget);
+	context["script"] = _build_script_context(p_script_path, p_diagnostics, p_code_snippet, script_repair_budget);
+	context["budget"] = _serialize_budget(script_repair_budget);
+	context["budget_policy"] = _build_budget_info();
 	return _merge_context(context, p_overrides);
 }
 
@@ -88,7 +119,35 @@ Dictionary EditorContextCollector::get_collector_status() const {
 	return status;
 }
 
-Dictionary EditorContextCollector::_build_scene_context() const {
+EditorContextCollector::ContextBudget EditorContextCollector::_sanitize_budget(const Dictionary &p_budget, const ContextBudget &p_fallback) const {
+	ContextBudget budget = p_fallback;
+
+	if (p_budget.has("scene_node_budget")) {
+		budget.scene_node_budget = CLAMP(int32_t(p_budget["scene_node_budget"]), MIN_SCENE_NODE_BUDGET, MAX_SCENE_NODE_BUDGET);
+	}
+	if (p_budget.has("scene_depth_budget")) {
+		budget.scene_depth_budget = CLAMP(int32_t(p_budget["scene_depth_budget"]), MIN_SCENE_DEPTH_BUDGET, MAX_SCENE_DEPTH_BUDGET);
+	}
+	if (p_budget.has("selection_budget")) {
+		budget.selection_budget = CLAMP(int32_t(p_budget["selection_budget"]), MIN_SELECTION_BUDGET, MAX_SELECTION_BUDGET);
+	}
+	if (p_budget.has("text_preview_budget")) {
+		budget.text_preview_budget = CLAMP(int32_t(p_budget["text_preview_budget"]), MIN_TEXT_PREVIEW_BUDGET, MAX_TEXT_PREVIEW_BUDGET);
+	}
+
+	return budget;
+}
+
+Dictionary EditorContextCollector::_serialize_budget(const ContextBudget &p_budget) const {
+	Dictionary budget;
+	budget["scene_node_budget"] = p_budget.scene_node_budget;
+	budget["scene_depth_budget"] = p_budget.scene_depth_budget;
+	budget["selection_budget"] = p_budget.selection_budget;
+	budget["text_preview_budget"] = p_budget.text_preview_budget;
+	return budget;
+}
+
+Dictionary EditorContextCollector::_build_scene_context(const ContextBudget &p_budget) const {
 	Dictionary scene_context;
 	if (!has_editor_interface()) {
 		return scene_context;
@@ -98,7 +157,7 @@ Dictionary EditorContextCollector::_build_scene_context() const {
 	Node *edited_scene_root = editor_interface->get_edited_scene_root();
 	const PackedStringArray open_scenes = editor_interface->get_open_scenes();
 	const PackedStringArray unsaved_scenes = editor_interface->get_unsaved_scenes();
-	const Array selection = _snapshot_selection();
+	const Array selection = _snapshot_selection(p_budget);
 
 	scene_context["open_scenes"] = open_scenes;
 	scene_context["open_scene_count"] = open_scenes.size();
@@ -110,22 +169,25 @@ Dictionary EditorContextCollector::_build_scene_context() const {
 	scene_context["selection"] = selection;
 	scene_context["selection_count"] = selection.size();
 
-	if (edited_scene_root != nullptr) {
-		int32_t remaining_budget = SCENE_NODE_BUDGET;
-		scene_context["tree_snapshot"] = _snapshot_node(edited_scene_root, 0, remaining_budget);
-		scene_context["tree_nodes_captured"] = SCENE_NODE_BUDGET - remaining_budget;
+	if (edited_scene_root != nullptr && p_budget.scene_node_budget > 0) {
+		int32_t remaining_budget = p_budget.scene_node_budget;
+		scene_context["tree_snapshot"] = _snapshot_node(edited_scene_root, 0, remaining_budget, p_budget);
+		scene_context["tree_nodes_captured"] = p_budget.scene_node_budget - remaining_budget;
 		scene_context["tree_node_budget_exhausted"] = remaining_budget == 0;
+	} else {
+		scene_context["tree_nodes_captured"] = 0;
+		scene_context["tree_node_budget_exhausted"] = false;
 	}
 
 	return scene_context;
 }
 
-Dictionary EditorContextCollector::_build_script_context(const String &p_script_path, const String &p_diagnostics, const String &p_code_snippet) const {
+Dictionary EditorContextCollector::_build_script_context(const String &p_script_path, const String &p_diagnostics, const String &p_code_snippet, const ContextBudget &p_budget) const {
 	Dictionary script_context;
 	const String snippet = p_code_snippet.is_empty() ? _load_script_snippet(p_script_path) : p_code_snippet;
 	script_context["script_path"] = p_script_path;
-	script_context["diagnostics"] = _truncate_text(p_diagnostics, TEXT_PREVIEW_BUDGET);
-	script_context["code_snippet"] = _truncate_text(snippet, TEXT_PREVIEW_BUDGET);
+	script_context["diagnostics"] = _truncate_text(p_diagnostics, p_budget.text_preview_budget);
+	script_context["code_snippet"] = _truncate_text(snippet, p_budget.text_preview_budget);
 	script_context["has_code_snippet"] = !snippet.is_empty();
 	script_context["code_snippet_source"] = p_code_snippet.is_empty() ? (snippet.is_empty() ? "unavailable" : "file_access") : "request";
 	return script_context;
@@ -141,14 +203,22 @@ Dictionary EditorContextCollector::_build_project_context() const {
 
 Dictionary EditorContextCollector::_build_budget_info() const {
 	Dictionary budget;
-	budget["scene_node_budget"] = SCENE_NODE_BUDGET;
-	budget["scene_depth_budget"] = SCENE_DEPTH_BUDGET;
-	budget["selection_budget"] = SELECTION_BUDGET;
-	budget["text_preview_budget"] = TEXT_PREVIEW_BUDGET;
+	Dictionary limits;
+	limits["scene_node_budget_min"] = MIN_SCENE_NODE_BUDGET;
+	limits["scene_node_budget_max"] = MAX_SCENE_NODE_BUDGET;
+	limits["scene_depth_budget_min"] = MIN_SCENE_DEPTH_BUDGET;
+	limits["scene_depth_budget_max"] = MAX_SCENE_DEPTH_BUDGET;
+	limits["selection_budget_min"] = MIN_SELECTION_BUDGET;
+	limits["selection_budget_max"] = MAX_SELECTION_BUDGET;
+	limits["text_preview_budget_min"] = MIN_TEXT_PREVIEW_BUDGET;
+	limits["text_preview_budget_max"] = MAX_TEXT_PREVIEW_BUDGET;
+	budget["scene_synthesis"] = _serialize_budget(scene_synthesis_budget);
+	budget["script_repair"] = _serialize_budget(script_repair_budget);
+	budget["limits"] = limits;
 	return budget;
 }
 
-Dictionary EditorContextCollector::_snapshot_node(Node *p_node, int32_t p_depth, int32_t &r_remaining_budget) const {
+Dictionary EditorContextCollector::_snapshot_node(Node *p_node, int32_t p_depth, int32_t &r_remaining_budget, const ContextBudget &p_budget) const {
 	Dictionary snapshot;
 	if (p_node == nullptr || r_remaining_budget <= 0) {
 		return snapshot;
@@ -164,7 +234,7 @@ Dictionary EditorContextCollector::_snapshot_node(Node *p_node, int32_t p_depth,
 	snapshot["has_script"] = p_node->get_script().get_type() != Variant::NIL;
 	snapshot["is_unique_name_in_owner"] = p_node->is_unique_name_in_owner();
 
-	if (p_depth >= SCENE_DEPTH_BUDGET || r_remaining_budget <= 0) {
+	if (p_depth >= p_budget.scene_depth_budget || r_remaining_budget <= 0) {
 		snapshot["children_truncated"] = p_node->get_child_count() > 0;
 		return snapshot;
 	}
@@ -173,14 +243,14 @@ Dictionary EditorContextCollector::_snapshot_node(Node *p_node, int32_t p_depth,
 	const int32_t child_count = p_node->get_child_count();
 	for (int32_t i = 0; i < child_count && r_remaining_budget > 0; i++) {
 		Node *child = p_node->get_child(i);
-		children.push_back(_snapshot_node(child, p_depth + 1, r_remaining_budget));
+		children.push_back(_snapshot_node(child, p_depth + 1, r_remaining_budget, p_budget));
 	}
 	snapshot["children"] = children;
 	snapshot["children_truncated"] = children.size() < child_count;
 	return snapshot;
 }
 
-Array EditorContextCollector::_snapshot_selection() const {
+Array EditorContextCollector::_snapshot_selection(const ContextBudget &p_budget) const {
 	Array selection_snapshot;
 	if (!has_editor_interface()) {
 		return selection_snapshot;
@@ -192,7 +262,7 @@ Array EditorContextCollector::_snapshot_selection() const {
 	}
 
 	const TypedArray<Node> selected_nodes = selection->get_selected_nodes();
-	const int32_t selection_count = MIN(selected_nodes.size(), SELECTION_BUDGET);
+	const int32_t selection_count = MIN(selected_nodes.size(), p_budget.selection_budget);
 	for (int32_t i = 0; i < selection_count; i++) {
 		Node *node = Object::cast_to<Node>(selected_nodes[i]);
 		if (node == nullptr) {
@@ -240,6 +310,14 @@ Dictionary EditorContextCollector::_merge_context(const Dictionary &p_base, cons
 
 EditorContextCollector::EditorContextCollector() {
 	ERR_FAIL_COND(singleton != nullptr);
+	scene_synthesis_budget.scene_node_budget = 64;
+	scene_synthesis_budget.scene_depth_budget = 4;
+	scene_synthesis_budget.selection_budget = 16;
+	scene_synthesis_budget.text_preview_budget = 2000;
+	script_repair_budget.scene_node_budget = 24;
+	script_repair_budget.scene_depth_budget = 2;
+	script_repair_budget.selection_budget = 8;
+	script_repair_budget.text_preview_budget = 4000;
 	singleton = this;
 }
 

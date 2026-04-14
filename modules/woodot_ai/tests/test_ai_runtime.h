@@ -38,8 +38,17 @@
 #include "../runtime/ai_requests.h"
 #include "../runtime/ai_task_scheduler.h"
 
+#ifdef TOOLS_ENABLED
+#include "../editor/editor_ai_preview_diff.h"
+#include "../editor/editor_ai_service.h"
+#include "../editor/gdscript_repair_engine.h"
+#include "../editor/node_graph_intent_parser.h"
+#include "../editor/undo_redo_bridge.h"
+#endif
+
 #include "core/io/resource_loader.h"
 #include "core/io/resource_saver.h"
+#include "core/io/file_access.h"
 #include "core/os/os.h"
 #include "core/templates/hash_map.h"
 #include "core/templates/rid_owner.h"
@@ -225,6 +234,50 @@ static bool property_has_editor_usage(const Object *p_object, const StringName &
 	}
 	return false;
 }
+
+#ifdef TOOLS_ENABLED
+template <class T>
+class ScopedEditorSingleton {
+	T *instance = nullptr;
+	bool owned = false;
+
+public:
+	ScopedEditorSingleton(T *p_existing) {
+		if (p_existing != nullptr) {
+			instance = p_existing;
+			return;
+		}
+		instance = memnew(T);
+		owned = true;
+	}
+
+	~ScopedEditorSingleton() {
+		if (owned) {
+			memdelete(instance);
+		}
+	}
+
+	T *operator->() const {
+		return instance;
+	}
+
+	T *get() const {
+		return instance;
+	}
+};
+
+static Ref<AITaskHandle> make_completed_text_task(const String &p_text, const Dictionary &p_metadata = Dictionary()) {
+	Ref<AITaskHandle> handle;
+	handle.instantiate();
+	handle->mark_running();
+	AIBackendResult result;
+	result.code = OK;
+	result.final_text = p_text;
+	result.metadata = p_metadata;
+	CHECK(handle->complete(result));
+	return handle;
+}
+#endif
 
 TEST_CASE("[WoodotAI] Queued task cancellation drains through mailbox") {
 	MockAIBackend backend;
@@ -523,5 +576,76 @@ TEST_CASE("[WoodotAI] AITensorResource limits large CPU buffers in inspector met
 	CHECK(resource->get_cpu_data_preview().contains("inspector display limited"));
 	CHECK_FALSE(property_has_editor_usage(resource.ptr(), "cpu_data"));
 }
+
+#ifdef TOOLS_ENABLED
+TEST_CASE("[WoodotAI] Editor MVP resolves scene synthesis task into plan preview") {
+	ScopedEditorSingleton<NodeGraphIntentParser> parser(NodeGraphIntentParser::get_singleton());
+	ScopedEditorSingleton<EditorAIPreviewDiff> preview(EditorAIPreviewDiff::get_singleton());
+	ScopedEditorSingleton<UndoRedoBridge> bridge(UndoRedoBridge::get_singleton());
+	ScopedEditorSingleton<EditorAIService> service(EditorAIService::get_singleton());
+
+	const String scene_ir = "{\"prompt\":\"make a camera rig\",\"node_operations\":[{\"op\":\"create_node\",\"parent_path\":\".\",\"name\":\"GeneratedCamera\",\"node_type\":\"Camera3D\"},{\"op\":\"set_property\",\"target_path\":\"GeneratedCamera\",\"property\":\"current\",\"value\":true}],\"resource_operations\":[],\"warnings\":[]}";
+	Ref<AITaskHandle> handle = make_completed_text_task(scene_ir);
+	const Dictionary resolved = service->resolve_scene_synthesis_task(handle, "make a camera rig");
+
+	CHECK(bool(resolved["ok"]));
+	CHECK(resolved.has("plan"));
+	CHECK(resolved.has("preview"));
+	CHECK(resolved.has("apply_status"));
+
+	const Dictionary preview_data = resolved["preview"];
+	CHECK_EQ(String(preview_data["kind"]), String("scene_plan"));
+	CHECK(int64_t(preview_data["operation_count"]) == 2);
+
+	const Dictionary apply_status = resolved["apply_status"];
+	CHECK_FALSE(bool(apply_status["can_apply"]));
+}
+
+TEST_CASE("[WoodotAI] Editor MVP resolves script repair task into patch preview") {
+	ScopedEditorSingleton<GDScriptRepairEngine> repair_engine(GDScriptRepairEngine::get_singleton());
+	ScopedEditorSingleton<EditorAIPreviewDiff> preview(EditorAIPreviewDiff::get_singleton());
+	ScopedEditorSingleton<UndoRedoBridge> bridge(UndoRedoBridge::get_singleton());
+	ScopedEditorSingleton<EditorAIService> service(EditorAIService::get_singleton());
+
+	const String script_path = TestUtils::get_temp_path("woodot_ai_editor_repair_test.gd");
+	{
+		Ref<FileAccess> file = FileAccess::open(script_path, FileAccess::WRITE);
+		REQUIRE(file.is_valid());
+		file->store_string("extends Node\n\nfunc ready()\n\tpass\n");
+	}
+
+	Dictionary metadata;
+	metadata["script_path"] = script_path;
+	metadata["diagnostics"] = "Expected ':' after function declaration.";
+
+	const String patch_ir = "{\"script_path\":\"" + script_path.json_escape() + "\",\"diagnostic_message\":\"Expected ':' after function declaration.\",\"hunks\":[{\"op\":\"replace_range\",\"line_start\":3,\"line_end\":3,\"replacement_text\":\"func ready():\"}],\"warnings\":[]}";
+	Ref<AITaskHandle> handle = make_completed_text_task(patch_ir, metadata);
+	const Dictionary resolved = service->resolve_script_repair_task(handle);
+
+	CHECK(bool(resolved["ok"]));
+	const Dictionary preview_data = resolved["preview"];
+	CHECK_EQ(String(preview_data["kind"]), String("gdscript_patch"));
+	CHECK(bool(preview_data["can_apply"]));
+
+	const Dictionary apply_status = resolved["apply_status"];
+	CHECK(bool(apply_status["can_apply"]));
+	CHECK_EQ(Error(int64_t(apply_status["error"])), OK);
+}
+
+TEST_CASE("[WoodotAI] Editor parsers reject invalid scene and patch IR") {
+	ScopedEditorSingleton<NodeGraphIntentParser> parser(NodeGraphIntentParser::get_singleton());
+	ScopedEditorSingleton<GDScriptRepairEngine> repair_engine(GDScriptRepairEngine::get_singleton());
+
+	const Dictionary invalid_scene = parser->validate_scene_plan_ir("{\"node_operations\":[{\"op\":\"create_node\",\"node_type\":\"NotARealNode\"}]}");
+	CHECK_FALSE(bool(invalid_scene["valid"]));
+	const Array scene_errors = invalid_scene["errors"];
+	CHECK_FALSE(scene_errors.is_empty());
+
+	const Dictionary invalid_patch = repair_engine->validate_patch_ir("{\"script_path\":12,\"hunks\":[{\"op\":\"delete_all\"}]}");
+	CHECK_FALSE(bool(invalid_patch["valid"]));
+	const Array patch_errors = invalid_patch["errors"];
+	CHECK_FALSE(patch_errors.is_empty());
+}
+#endif
 
 } // namespace TestWoodotAIRuntime

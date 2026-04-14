@@ -232,6 +232,16 @@ graph LR
 
 `ED-002` 说明文档：`dev-doc/woodot-ai/04-editor-synergy-editor_context_collector.md`
 
+`ED-003` 说明文档：`dev-doc/woodot-ai/04-editor-synergy-context_budget_strategy.md`
+
+`ED-004` 说明文档：`dev-doc/woodot-ai/04-editor-synergy-node_graph_intent_parser.md`
+
+`ED-005` 说明文档：`dev-doc/woodot-ai/04-editor-synergy-gdscript_repair_engine.md`
+
+`ED-006` 说明文档：`dev-doc/woodot-ai/04-editor-synergy-editor_ai_preview_diff.md`
+
+`ED-007` 说明文档：`dev-doc/woodot-ai/04-editor-synergy-undo_redo_bridge.md`
+
 ---
 
 ## 12. 验收标准
@@ -241,3 +251,18 @@ graph LR
 3. Node 树生成功能不允许绕过 schema 校验
 4. GDScript 修复不以整文件覆写为默认路径
 5. 编辑器 AI 请求全异步，不阻塞主交互
+
+---
+
+## 13. 当前 MVP 进度
+
+- `ED-008`
+  - `EditorAIService` 已支持把完成态 `AITaskHandle` 解析为 `SceneSynthesisPlan`
+  - 已接入 preview 构建
+  - `UndoRedoBridge` 已支持 `create_node` / `set_property` 的安全子集 apply
+- `ED-009`
+  - `EditorAIService` 已支持把完成态 `AITaskHandle` 解析为 `GDScriptRepairPatch`
+  - 已接入 patch preview 与可应用性检查
+  - `UndoRedoBridge` 已支持基于 hunk 的脚本 patch 应用
+- `ED-010`
+  - 已补充 editor 侧非法 scene IR / patch IR 防御测试
