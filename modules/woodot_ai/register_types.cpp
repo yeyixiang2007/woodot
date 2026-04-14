@@ -41,11 +41,18 @@
 #include "modules/woodot_ai/runtime/ai_task_handle.h"
 #include "modules/woodot_ai/runtime/ai_runtime_server.h"
 
+#ifdef TOOLS_ENABLED
+#include "modules/woodot_ai/editor/editor_ai_service.h"
+#endif
+
 #ifdef TESTS_ENABLED
 #include "modules/woodot_ai/tests/test_ai_runtime.h"
 #endif
 
 static AIRuntimeServer *woodot_ai_runtime_server = nullptr;
+#ifdef TOOLS_ENABLED
+static EditorAIService *woodot_ai_editor_service = nullptr;
+#endif
 
 void initialize_woodot_ai_module(ModuleInitializationLevel p_level) {
 	switch (p_level) {
@@ -66,7 +73,17 @@ void initialize_woodot_ai_module(ModuleInitializationLevel p_level) {
 			Engine::get_singleton()->add_singleton(Engine::Singleton("AIRuntimeServer", woodot_ai_runtime_server, "AIRuntimeServer"));
 		} break;
 		case MODULE_INITIALIZATION_LEVEL_SCENE:
+			break;
 		case MODULE_INITIALIZATION_LEVEL_EDITOR:
+#ifdef TOOLS_ENABLED
+			GDREGISTER_CLASS(EditorAIService);
+			woodot_ai_editor_service = memnew(EditorAIService);
+			{
+				Engine::Singleton singleton("EditorAIService", woodot_ai_editor_service, "EditorAIService");
+				singleton.editor_only = true;
+				Engine::get_singleton()->add_singleton(singleton);
+			}
+#endif
 			break;
 	}
 }
@@ -85,7 +102,17 @@ void uninitialize_woodot_ai_module(ModuleInitializationLevel p_level) {
 			}
 			break;
 		case MODULE_INITIALIZATION_LEVEL_SCENE:
+			break;
 		case MODULE_INITIALIZATION_LEVEL_EDITOR:
+#ifdef TOOLS_ENABLED
+			if (woodot_ai_editor_service != nullptr) {
+				if (Engine::get_singleton()->has_singleton("EditorAIService")) {
+					Engine::get_singleton()->remove_singleton("EditorAIService");
+				}
+				memdelete(woodot_ai_editor_service);
+				woodot_ai_editor_service = nullptr;
+			}
+#endif
 			break;
 	}
 }
