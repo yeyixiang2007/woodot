@@ -162,6 +162,10 @@ sequenceDiagram
 - 生成文本描述
 - 生成检索关键词
 
+实现说明：
+
+- 参考 `05-import-pipeline-ecosystem-ai_asset_annotator.md`
+
 ### 9.3 `AIMeshPostProcessor`
 
 职责：
@@ -169,6 +173,10 @@ sequenceDiagram
 - 自动拓扑建议
 - 网格分类
 - LOD 分析建议
+
+实现说明：
+
+- 参考 `05-import-pipeline-ecosystem-ai_mesh_post_processor.md`
 
 ### 9.4 `AITextureEnhancer`
 
@@ -178,6 +186,10 @@ sequenceDiagram
 - 去噪
 - 法线/粗糙度辅助生成
 
+实现说明：
+
+- 参考 `05-import-pipeline-ecosystem-ai_texture_enhancer.md`
+
 ### 9.5 `ModelCacheManager`
 
 职责：
@@ -186,6 +198,10 @@ sequenceDiagram
 - 平台工件缓存
 - 量化版本缓存
 - embedding 缓存
+
+实现说明：
+
+- 参考 `05-import-pipeline-ecosystem-model_cache_manager.md`
 
 ---
 
@@ -203,6 +219,25 @@ sequenceDiagram
 | PIPE-008 | 实现 `AIExtensionAPI` | 扩展接口 | RT-003 | 高 |
 | PIPE-009 | 失败回退验证 | 测试用例 | PIPE-001 | 高 |
 | PIPE-010 | 导入性能压测 | 性能报告 | PIPE-003 | 高 |
+
+---
+
+## 10.1 `PIPE-002` 开关策略
+
+当前导入 AI pass 策略通过 `ProjectSettings` 暴露，默认值遵循“安全回退优先”：
+
+- `woodot_ai/import/enabled = false`
+- `woodot_ai/import/fail_open = true`
+- `woodot_ai/import/passes/asset_annotation_enabled = true`
+- `woodot_ai/import/passes/mesh_postprocess_enabled = false`
+- `woodot_ai/import/passes/texture_enhancement_enabled = false`
+
+设计意图：
+
+- 总开关默认关闭，确保现有导入行为零侵入
+- `fail_open` 默认开启，避免 AI 运行时异常阻塞基础导入
+- 先把 `asset_annotation` 作为默认可启用 pass，便于后续优先接入 `PIPE-003`
+- 代价更高的 mesh / texture pass 默认关闭，等待独立实现与性能验证
 
 ---
 

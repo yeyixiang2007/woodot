@@ -30,7 +30,13 @@
 
 #include "modules/woodot_ai/import/ai_import_orchestrator.h"
 
+#include "core/config/project_settings.h"
+#include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
+#include "modules/woodot_ai/import/ai_asset_annotator.h"
+#include "modules/woodot_ai/import/ai_mesh_post_processor.h"
+#include "modules/woodot_ai/import/model_cache_manager.h"
+#include "modules/woodot_ai/import/ai_texture_enhancer.h"
 #include "modules/woodot_ai/resources/ai_model_resource.h"
 #include "modules/woodot_ai/runtime/ai_runtime_server.h"
 
@@ -39,6 +45,26 @@
 #endif
 
 AIImportOrchestrator *AIImportOrchestrator::singleton = nullptr;
+
+String AIImportOrchestrator::_setting_path_enabled() {
+	return "woodot_ai/import/enabled";
+}
+
+String AIImportOrchestrator::_setting_path_fail_open() {
+	return "woodot_ai/import/fail_open";
+}
+
+String AIImportOrchestrator::_setting_path_asset_annotation_enabled() {
+	return "woodot_ai/import/passes/asset_annotation_enabled";
+}
+
+String AIImportOrchestrator::_setting_path_mesh_postprocess_enabled() {
+	return "woodot_ai/import/passes/mesh_postprocess_enabled";
+}
+
+String AIImportOrchestrator::_setting_path_texture_enhancement_enabled() {
+	return "woodot_ai/import/passes/texture_enhancement_enabled";
+}
 
 void AIImportOrchestrator::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_enabled", "enabled"), &AIImportOrchestrator::set_enabled);
@@ -60,7 +86,14 @@ void AIImportOrchestrator::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("unload_default_model"), &AIImportOrchestrator::unload_default_model);
 	ClassDB::bind_method(D_METHOD("has_runtime_server"), &AIImportOrchestrator::has_runtime_server);
 	ClassDB::bind_method(D_METHOD("has_editor_ai_service"), &AIImportOrchestrator::has_editor_ai_service);
+	ClassDB::bind_method(D_METHOD("has_asset_annotator"), &AIImportOrchestrator::has_asset_annotator);
+	ClassDB::bind_method(D_METHOD("has_mesh_post_processor"), &AIImportOrchestrator::has_mesh_post_processor);
+	ClassDB::bind_method(D_METHOD("has_texture_enhancer"), &AIImportOrchestrator::has_texture_enhancer);
+	ClassDB::bind_method(D_METHOD("has_model_cache_manager"), &AIImportOrchestrator::has_model_cache_manager);
 	ClassDB::bind_method(D_METHOD("is_ready"), &AIImportOrchestrator::is_ready);
+	ClassDB::bind_method(D_METHOD("reload_project_settings"), &AIImportOrchestrator::reload_project_settings);
+	ClassDB::bind_method(D_METHOD("save_project_settings"), &AIImportOrchestrator::save_project_settings);
+	ClassDB::bind_method(D_METHOD("get_policy_settings"), &AIImportOrchestrator::get_policy_settings);
 	ClassDB::bind_method(D_METHOD("build_import_context", "source_path", "importer_name", "options"), &AIImportOrchestrator::build_import_context, DEFVAL(Dictionary()));
 	ClassDB::bind_method(D_METHOD("create_annotation_request", "source_path", "importer_name", "prompt", "model_rid", "options"), &AIImportOrchestrator::create_annotation_request, DEFVAL(RID()), DEFVAL(Dictionary()));
 	ClassDB::bind_method(D_METHOD("orchestrate_import", "source_path", "importer_name", "options"), &AIImportOrchestrator::orchestrate_import, DEFVAL(Dictionary()));
@@ -89,6 +122,14 @@ void AIImportOrchestrator::_bind_methods() {
 
 AIImportOrchestrator *AIImportOrchestrator::get_singleton() {
 	return singleton;
+}
+
+void AIImportOrchestrator::register_project_settings() {
+	GLOBAL_DEF(PropertyInfo(Variant::BOOL, _setting_path_enabled()), false);
+	GLOBAL_DEF(PropertyInfo(Variant::BOOL, _setting_path_fail_open()), true);
+	GLOBAL_DEF(PropertyInfo(Variant::BOOL, _setting_path_asset_annotation_enabled()), true);
+	GLOBAL_DEF(PropertyInfo(Variant::BOOL, _setting_path_mesh_postprocess_enabled()), false);
+	GLOBAL_DEF(PropertyInfo(Variant::BOOL, _setting_path_texture_enhancement_enabled()), false);
 }
 
 void AIImportOrchestrator::set_enabled(bool p_enabled) {
@@ -243,8 +284,71 @@ bool AIImportOrchestrator::has_editor_ai_service() const {
 	return _get_editor_ai_service() != nullptr;
 }
 
+bool AIImportOrchestrator::has_asset_annotator() const {
+	return _get_asset_annotator() != nullptr;
+}
+
+bool AIImportOrchestrator::has_mesh_post_processor() const {
+	return _get_mesh_post_processor() != nullptr;
+}
+
+bool AIImportOrchestrator::has_texture_enhancer() const {
+	return _get_texture_enhancer() != nullptr;
+}
+
+bool AIImportOrchestrator::has_model_cache_manager() const {
+	return _get_model_cache_manager() != nullptr;
+}
+
 bool AIImportOrchestrator::is_ready() const {
 	return enabled && has_runtime_server() && (default_model.is_valid() || has_editor_ai_service());
+}
+
+void AIImportOrchestrator::reload_project_settings() {
+	ProjectSettings *project_settings = ProjectSettings::get_singleton();
+	ERR_FAIL_NULL(project_settings);
+
+	const bool configured_enabled = project_settings->has_setting(_setting_path_enabled()) ? bool(project_settings->get_setting_with_override(_setting_path_enabled())) : false;
+	const bool configured_fail_open = project_settings->has_setting(_setting_path_fail_open()) ? bool(project_settings->get_setting_with_override(_setting_path_fail_open())) : true;
+	const bool configured_asset_annotation = project_settings->has_setting(_setting_path_asset_annotation_enabled()) ? bool(project_settings->get_setting_with_override(_setting_path_asset_annotation_enabled())) : true;
+	const bool configured_mesh_postprocess = project_settings->has_setting(_setting_path_mesh_postprocess_enabled()) ? bool(project_settings->get_setting_with_override(_setting_path_mesh_postprocess_enabled())) : false;
+	const bool configured_texture_enhancement = project_settings->has_setting(_setting_path_texture_enhancement_enabled()) ? bool(project_settings->get_setting_with_override(_setting_path_texture_enhancement_enabled())) : false;
+
+	_apply_settings_values(
+			configured_enabled,
+			configured_fail_open,
+			configured_asset_annotation,
+			configured_mesh_postprocess,
+			configured_texture_enhancement);
+}
+
+void AIImportOrchestrator::save_project_settings() const {
+	ProjectSettings *project_settings = ProjectSettings::get_singleton();
+	ERR_FAIL_NULL(project_settings);
+
+	project_settings->set_setting(_setting_path_enabled(), enabled);
+	project_settings->set_setting(_setting_path_fail_open(), fail_open);
+	project_settings->set_setting(_setting_path_asset_annotation_enabled(), asset_annotation_enabled);
+	project_settings->set_setting(_setting_path_mesh_postprocess_enabled(), mesh_postprocess_enabled);
+	project_settings->set_setting(_setting_path_texture_enhancement_enabled(), texture_enhancement_enabled);
+}
+
+Dictionary AIImportOrchestrator::get_policy_settings() const {
+	Dictionary settings;
+	PackedStringArray project_setting_paths;
+	project_setting_paths.push_back(_setting_path_enabled());
+	project_setting_paths.push_back(_setting_path_fail_open());
+	project_setting_paths.push_back(_setting_path_asset_annotation_enabled());
+	project_setting_paths.push_back(_setting_path_mesh_postprocess_enabled());
+	project_setting_paths.push_back(_setting_path_texture_enhancement_enabled());
+
+	settings["enabled"] = enabled;
+	settings["fail_open"] = fail_open;
+	settings["asset_annotation_enabled"] = asset_annotation_enabled;
+	settings["mesh_postprocess_enabled"] = mesh_postprocess_enabled;
+	settings["texture_enhancement_enabled"] = texture_enhancement_enabled;
+	settings["project_setting_paths"] = project_setting_paths;
+	return settings;
 }
 
 Dictionary AIImportOrchestrator::build_import_context(const String &p_source_path, const String &p_importer_name, const Dictionary &p_options) const {
@@ -259,8 +363,10 @@ Dictionary AIImportOrchestrator::build_import_context(const String &p_source_pat
 	context["options"] = p_options;
 	context["runtime_available"] = has_runtime_server();
 	context["editor_service_available"] = has_editor_ai_service();
+	context["cache_manager_available"] = has_model_cache_manager();
 	context["default_model_assigned"] = default_model.is_valid();
 	context["default_model_loaded"] = has_loaded_default_model();
+	context["cached_annotation_status"] = has_model_cache_manager() ? _get_model_cache_manager()->get_cached_annotation_status(p_source_path, p_importer_name, p_options) : Dictionary();
 
 	if (default_model.is_valid()) {
 		context["default_model_backend"] = String(default_model->get_backend_type());
@@ -326,6 +432,9 @@ Dictionary AIImportOrchestrator::orchestrate_import(const String &p_source_path,
 	result["fallback_to_base_import"] = true;
 	result["request_prepared"] = false;
 	result["annotation_request"] = Variant();
+	result["annotation_task"] = Variant();
+	result["mesh_processing_plan"] = Dictionary();
+	result["texture_enhancement_plan"] = Dictionary();
 	result["message"] = "AI import pass is disabled.";
 
 	const bool has_any_pass = asset_annotation_enabled || mesh_postprocess_enabled || texture_enhancement_enabled;
@@ -355,21 +464,49 @@ Dictionary AIImportOrchestrator::orchestrate_import(const String &p_source_path,
 	}
 
 	if (asset_annotation_enabled) {
-		const String annotation_prompt = p_options.has("annotation_prompt") ? String(p_options["annotation_prompt"]) : (p_options.has("prompt") ? String(p_options["prompt"]) : String());
-		if (!annotation_prompt.is_empty()) {
-			Ref<AICompletionRequest> request = create_annotation_request(p_source_path, p_importer_name, annotation_prompt, RID(), p_options);
+		if (has_asset_annotator()) {
+			AIAssetAnnotator *annotator = _get_asset_annotator();
+			Ref<AICompletionRequest> request = annotator->prepare_annotation_request(p_source_path, p_importer_name, p_options);
 			if (request.is_valid()) {
 				prepared_requests++;
 				result["ai_planned"] = true;
 				result["request_prepared"] = true;
 				result["annotation_request"] = request;
-				result["fallback_to_base_import"] = fail_open;
-				result["message"] = "Prepared asset annotation request.";
-				result["reason"] = "request_prepared";
 				emit_signal(SNAME("request_prepared"), p_source_path, p_importer_name, request);
-				return result;
+
+				Ref<AITaskHandle> task_handle = annotator->submit_annotation(p_source_path, p_importer_name, p_options);
+				if (task_handle.is_valid()) {
+					result["annotation_task"] = task_handle;
+					result["fallback_to_base_import"] = fail_open;
+					result["message"] = "Submitted asset annotation task.";
+					result["reason"] = "annotation_submitted";
+					return result;
+				}
+			}
+		} else {
+			const String annotation_prompt = p_options.has("annotation_prompt") ? String(p_options["annotation_prompt"]) : (p_options.has("prompt") ? String(p_options["prompt"]) : String());
+			if (!annotation_prompt.is_empty()) {
+				Ref<AICompletionRequest> request = create_annotation_request(p_source_path, p_importer_name, annotation_prompt, RID(), p_options);
+				if (request.is_valid()) {
+					prepared_requests++;
+					result["ai_planned"] = true;
+					result["request_prepared"] = true;
+					result["annotation_request"] = request;
+					result["fallback_to_base_import"] = fail_open;
+					result["message"] = "Prepared asset annotation request.";
+					result["reason"] = "request_prepared";
+					emit_signal(SNAME("request_prepared"), p_source_path, p_importer_name, request);
+					return result;
+				}
 			}
 		}
+	}
+
+	if (mesh_postprocess_enabled && has_mesh_post_processor()) {
+		result["mesh_processing_plan"] = _get_mesh_post_processor()->build_processing_plan(p_source_path, p_importer_name, p_options);
+	}
+	if (texture_enhancement_enabled && has_texture_enhancer()) {
+		result["texture_enhancement_plan"] = _get_texture_enhancer()->build_enhancement_plan(p_source_path, p_importer_name, p_options);
 	}
 
 	fallback_imports++;
@@ -386,16 +523,25 @@ Dictionary AIImportOrchestrator::get_orchestrator_status() const {
 	status["ready"] = is_ready();
 	status["has_runtime_server"] = has_runtime_server();
 	status["has_editor_ai_service"] = has_editor_ai_service();
+	status["has_asset_annotator"] = has_asset_annotator();
+	status["has_mesh_post_processor"] = has_mesh_post_processor();
+	status["has_texture_enhancer"] = has_texture_enhancer();
+	status["has_model_cache_manager"] = has_model_cache_manager();
 	status["has_default_model"] = default_model.is_valid();
 	status["has_loaded_default_model"] = has_loaded_default_model();
 	status["default_model_rid"] = default_model_rid;
 	status["enabled_passes"] = _get_enabled_pass_names();
+	status["policy_settings"] = get_policy_settings();
 	status["inspected_imports"] = static_cast<int64_t>(inspected_imports);
 	status["ai_candidate_imports"] = static_cast<int64_t>(ai_candidate_imports);
 	status["prepared_requests"] = static_cast<int64_t>(prepared_requests);
 	status["fallback_imports"] = static_cast<int64_t>(fallback_imports);
 	status["runtime_stats"] = has_runtime_server() ? _get_runtime_server()->get_runtime_stats() : Dictionary();
 	status["editor_service_status"] = has_editor_ai_service() ? _get_editor_ai_service()->get_service_status() : Dictionary();
+	status["asset_annotator_status"] = has_asset_annotator() ? _get_asset_annotator()->get_annotator_status() : Dictionary();
+	status["mesh_post_processor_status"] = has_mesh_post_processor() ? _get_mesh_post_processor()->get_processor_status() : Dictionary();
+	status["texture_enhancer_status"] = has_texture_enhancer() ? _get_texture_enhancer()->get_enhancer_status() : Dictionary();
+	status["model_cache_manager_status"] = has_model_cache_manager() ? _get_model_cache_manager()->get_manager_status() : Dictionary();
 	return status;
 }
 
@@ -409,6 +555,40 @@ EditorAIService *AIImportOrchestrator::_get_editor_ai_service() const {
 #else
 	return nullptr;
 #endif
+}
+
+AIAssetAnnotator *AIImportOrchestrator::_get_asset_annotator() const {
+	return AIAssetAnnotator::get_singleton();
+}
+
+AIMeshPostProcessor *AIImportOrchestrator::_get_mesh_post_processor() const {
+	return AIMeshPostProcessor::get_singleton();
+}
+
+AITextureEnhancer *AIImportOrchestrator::_get_texture_enhancer() const {
+	return AITextureEnhancer::get_singleton();
+}
+
+ModelCacheManager *AIImportOrchestrator::_get_model_cache_manager() const {
+	return ModelCacheManager::get_singleton();
+}
+
+void AIImportOrchestrator::_apply_settings_values(bool p_enabled, bool p_fail_open, bool p_asset_annotation_enabled, bool p_mesh_postprocess_enabled, bool p_texture_enhancement_enabled) {
+	const bool changed = enabled != p_enabled ||
+			fail_open != p_fail_open ||
+			asset_annotation_enabled != p_asset_annotation_enabled ||
+			mesh_postprocess_enabled != p_mesh_postprocess_enabled ||
+			texture_enhancement_enabled != p_texture_enhancement_enabled;
+
+	enabled = p_enabled;
+	fail_open = p_fail_open;
+	asset_annotation_enabled = p_asset_annotation_enabled;
+	mesh_postprocess_enabled = p_mesh_postprocess_enabled;
+	texture_enhancement_enabled = p_texture_enhancement_enabled;
+
+	if (changed) {
+		emit_signal(SNAME("orchestrator_state_changed"));
+	}
 }
 
 String AIImportOrchestrator::_get_pass_name(PassType p_pass_type) const {
@@ -443,10 +623,18 @@ Array AIImportOrchestrator::_get_enabled_pass_names() const {
 AIImportOrchestrator::AIImportOrchestrator() {
 	ERR_FAIL_COND(singleton != nullptr);
 	singleton = this;
+	ProjectSettings *project_settings = ProjectSettings::get_singleton();
+	if (project_settings != nullptr) {
+		reload_project_settings();
+		project_settings->connect("settings_changed", callable_mp(this, &AIImportOrchestrator::reload_project_settings));
+	}
 }
 
 AIImportOrchestrator::~AIImportOrchestrator() {
 	if (singleton == this) {
+		if (ProjectSettings::get_singleton() != nullptr && ProjectSettings::get_singleton()->is_connected("settings_changed", callable_mp(this, &AIImportOrchestrator::reload_project_settings))) {
+			ProjectSettings::get_singleton()->disconnect("settings_changed", callable_mp(this, &AIImportOrchestrator::reload_project_settings));
+		}
 		unload_default_model();
 		singleton = nullptr;
 	}

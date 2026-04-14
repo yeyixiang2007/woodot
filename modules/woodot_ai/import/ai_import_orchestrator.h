@@ -35,8 +35,13 @@
 #include "modules/woodot_ai/runtime/ai_requests.h"
 
 class AIModelResource;
+class AIAssetAnnotator;
+class AIMeshPostProcessor;
+class AITextureEnhancer;
+class ModelCacheManager;
 class AIRuntimeServer;
 class EditorAIService;
+class ProjectSettings;
 
 class AIImportOrchestrator : public Object {
 	GDCLASS(AIImportOrchestrator, Object);
@@ -65,8 +70,19 @@ private:
 	uint64_t prepared_requests = 0;
 	uint64_t fallback_imports = 0;
 
+	static String _setting_path_enabled();
+	static String _setting_path_fail_open();
+	static String _setting_path_asset_annotation_enabled();
+	static String _setting_path_mesh_postprocess_enabled();
+	static String _setting_path_texture_enhancement_enabled();
+
 	AIRuntimeServer *_get_runtime_server() const;
 	EditorAIService *_get_editor_ai_service() const;
+	AIAssetAnnotator *_get_asset_annotator() const;
+	AIMeshPostProcessor *_get_mesh_post_processor() const;
+	AITextureEnhancer *_get_texture_enhancer() const;
+	ModelCacheManager *_get_model_cache_manager() const;
+	void _apply_settings_values(bool p_enabled, bool p_fail_open, bool p_asset_annotation_enabled, bool p_mesh_postprocess_enabled, bool p_texture_enhancement_enabled);
 	String _get_pass_name(PassType p_pass_type) const;
 	Array _get_enabled_pass_names() const;
 
@@ -75,6 +91,7 @@ protected:
 
 public:
 	static AIImportOrchestrator *get_singleton();
+	static void register_project_settings();
 
 	void set_enabled(bool p_enabled);
 	bool is_enabled() const;
@@ -102,8 +119,15 @@ public:
 
 	bool has_runtime_server() const;
 	bool has_editor_ai_service() const;
+	bool has_asset_annotator() const;
+	bool has_mesh_post_processor() const;
+	bool has_texture_enhancer() const;
+	bool has_model_cache_manager() const;
 	bool is_ready() const;
 
+	void reload_project_settings();
+	void save_project_settings() const;
+	Dictionary get_policy_settings() const;
 	Dictionary build_import_context(const String &p_source_path, const String &p_importer_name, const Dictionary &p_options = Dictionary()) const;
 	Ref<AICompletionRequest> create_annotation_request(const String &p_source_path, const String &p_importer_name, const String &p_prompt, const RID &p_model_rid = RID(), const Dictionary &p_options = Dictionary());
 	Dictionary orchestrate_import(const String &p_source_path, const String &p_importer_name, const Dictionary &p_options = Dictionary());

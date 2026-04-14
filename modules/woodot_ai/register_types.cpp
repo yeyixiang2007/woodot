@@ -31,7 +31,13 @@
 #include "register_types.h"
 
 #include "core/config/engine.h"
+#include "core/config/project_settings.h"
 #include "core/object/class_db.h"
+#include "modules/woodot_ai/import/ai_asset_annotator.h"
+#include "modules/woodot_ai/import/ai_import_orchestrator.h"
+#include "modules/woodot_ai/import/ai_mesh_post_processor.h"
+#include "modules/woodot_ai/import/ai_texture_enhancer.h"
+#include "modules/woodot_ai/import/model_cache_manager.h"
 #include "modules/woodot_ai/resources/ai_request_resources.h"
 #include "modules/woodot_ai/resources/ai_model_resource.h"
 #include "modules/woodot_ai/resources/ai_tensor_resource.h"
@@ -46,7 +52,6 @@
 #include "modules/woodot_ai/editor/editor_context_collector.h"
 #include "modules/woodot_ai/editor/editor_ai_service.h"
 #include "modules/woodot_ai/editor/gdscript_repair_engine.h"
-#include "modules/woodot_ai/import/ai_import_orchestrator.h"
 #include "modules/woodot_ai/editor/node_graph_intent_parser.h"
 #include "modules/woodot_ai/editor/undo_redo_bridge.h"
 #endif
@@ -60,6 +65,10 @@ static AIRuntimeServer *woodot_ai_runtime_server = nullptr;
 static EditorAIPreviewDiff *woodot_ai_preview_diff = nullptr;
 static EditorContextCollector *woodot_ai_editor_context_collector = nullptr;
 static GDScriptRepairEngine *woodot_ai_gdscript_repair_engine = nullptr;
+static AIAssetAnnotator *woodot_ai_asset_annotator = nullptr;
+static AIMeshPostProcessor *woodot_ai_mesh_post_processor = nullptr;
+static AITextureEnhancer *woodot_ai_texture_enhancer = nullptr;
+static ModelCacheManager *woodot_ai_model_cache_manager = nullptr;
 static AIImportOrchestrator *woodot_ai_import_orchestrator = nullptr;
 static NodeGraphIntentParser *woodot_ai_node_graph_intent_parser = nullptr;
 static UndoRedoBridge *woodot_ai_undo_redo_bridge = nullptr;
@@ -69,6 +78,8 @@ static EditorAIService *woodot_ai_editor_service = nullptr;
 void initialize_woodot_ai_module(ModuleInitializationLevel p_level) {
 	switch (p_level) {
 		case MODULE_INITIALIZATION_LEVEL_CORE:
+			AIImportOrchestrator::register_project_settings();
+			ModelCacheManager::register_project_settings();
 			GDREGISTER_CLASS(AIModelResource);
 			GDREGISTER_CLASS(AITensorResource);
 			GDREGISTER_CLASS(AICompletionRequestResource);
@@ -91,6 +102,10 @@ void initialize_woodot_ai_module(ModuleInitializationLevel p_level) {
 			GDREGISTER_CLASS(EditorAIPreviewDiff);
 			GDREGISTER_CLASS(EditorContextCollector);
 			GDREGISTER_CLASS(GDScriptRepairEngine);
+			GDREGISTER_CLASS(AIAssetAnnotator);
+			GDREGISTER_CLASS(AIMeshPostProcessor);
+			GDREGISTER_CLASS(AITextureEnhancer);
+			GDREGISTER_CLASS(ModelCacheManager);
 			GDREGISTER_CLASS(AIImportOrchestrator);
 			GDREGISTER_CLASS(NodeGraphIntentParser);
 			GDREGISTER_CLASS(UndoRedoBridge);
@@ -110,6 +125,30 @@ void initialize_woodot_ai_module(ModuleInitializationLevel p_level) {
 			woodot_ai_gdscript_repair_engine = memnew(GDScriptRepairEngine);
 			{
 				Engine::Singleton singleton("GDScriptRepairEngine", woodot_ai_gdscript_repair_engine, "GDScriptRepairEngine");
+				singleton.editor_only = true;
+				Engine::get_singleton()->add_singleton(singleton);
+			}
+			woodot_ai_asset_annotator = memnew(AIAssetAnnotator);
+			{
+				Engine::Singleton singleton("AIAssetAnnotator", woodot_ai_asset_annotator, "AIAssetAnnotator");
+				singleton.editor_only = true;
+				Engine::get_singleton()->add_singleton(singleton);
+			}
+			woodot_ai_mesh_post_processor = memnew(AIMeshPostProcessor);
+			{
+				Engine::Singleton singleton("AIMeshPostProcessor", woodot_ai_mesh_post_processor, "AIMeshPostProcessor");
+				singleton.editor_only = true;
+				Engine::get_singleton()->add_singleton(singleton);
+			}
+			woodot_ai_texture_enhancer = memnew(AITextureEnhancer);
+			{
+				Engine::Singleton singleton("AITextureEnhancer", woodot_ai_texture_enhancer, "AITextureEnhancer");
+				singleton.editor_only = true;
+				Engine::get_singleton()->add_singleton(singleton);
+			}
+			woodot_ai_model_cache_manager = memnew(ModelCacheManager);
+			{
+				Engine::Singleton singleton("ModelCacheManager", woodot_ai_model_cache_manager, "ModelCacheManager");
 				singleton.editor_only = true;
 				Engine::get_singleton()->add_singleton(singleton);
 			}
@@ -193,6 +232,34 @@ void uninitialize_woodot_ai_module(ModuleInitializationLevel p_level) {
 				}
 				memdelete(woodot_ai_import_orchestrator);
 				woodot_ai_import_orchestrator = nullptr;
+			}
+			if (woodot_ai_asset_annotator != nullptr) {
+				if (Engine::get_singleton()->has_singleton("AIAssetAnnotator")) {
+					Engine::get_singleton()->remove_singleton("AIAssetAnnotator");
+				}
+				memdelete(woodot_ai_asset_annotator);
+				woodot_ai_asset_annotator = nullptr;
+			}
+			if (woodot_ai_mesh_post_processor != nullptr) {
+				if (Engine::get_singleton()->has_singleton("AIMeshPostProcessor")) {
+					Engine::get_singleton()->remove_singleton("AIMeshPostProcessor");
+				}
+				memdelete(woodot_ai_mesh_post_processor);
+				woodot_ai_mesh_post_processor = nullptr;
+			}
+			if (woodot_ai_texture_enhancer != nullptr) {
+				if (Engine::get_singleton()->has_singleton("AITextureEnhancer")) {
+					Engine::get_singleton()->remove_singleton("AITextureEnhancer");
+				}
+				memdelete(woodot_ai_texture_enhancer);
+				woodot_ai_texture_enhancer = nullptr;
+			}
+			if (woodot_ai_model_cache_manager != nullptr) {
+				if (Engine::get_singleton()->has_singleton("ModelCacheManager")) {
+					Engine::get_singleton()->remove_singleton("ModelCacheManager");
+				}
+				memdelete(woodot_ai_model_cache_manager);
+				woodot_ai_model_cache_manager = nullptr;
 			}
 			if (woodot_ai_node_graph_intent_parser != nullptr) {
 				if (Engine::get_singleton()->has_singleton("NodeGraphIntentParser")) {
