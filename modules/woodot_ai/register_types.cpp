@@ -32,8 +32,11 @@
 
 #include "core/config/engine.h"
 #include "core/object/class_db.h"
+#include "modules/woodot_ai/resources/ai_request_resources.h"
 #include "modules/woodot_ai/resources/ai_model_resource.h"
 #include "modules/woodot_ai/resources/ai_tensor_resource.h"
+#include "modules/woodot_ai/resources/gdscript_repair_patch.h"
+#include "modules/woodot_ai/resources/scene_synthesis_plan.h"
 #include "modules/woodot_ai/runtime/ai_requests.h"
 #include "modules/woodot_ai/runtime/ai_task_handle.h"
 #include "modules/woodot_ai/runtime/ai_runtime_server.h"
@@ -45,6 +48,10 @@ void initialize_woodot_ai_module(ModuleInitializationLevel p_level) {
 		case MODULE_INITIALIZATION_LEVEL_CORE:
 			GDREGISTER_CLASS(AIModelResource);
 			GDREGISTER_CLASS(AITensorResource);
+			GDREGISTER_CLASS(AICompletionRequestResource);
+			GDREGISTER_CLASS(AIEmbeddingRequestResource);
+			GDREGISTER_CLASS(SceneSynthesisPlan);
+			GDREGISTER_CLASS(GDScriptRepairPatch);
 			GDREGISTER_CLASS(AICompletionRequest);
 			GDREGISTER_CLASS(AIEmbeddingRequest);
 			GDREGISTER_CLASS(AITaskHandle);

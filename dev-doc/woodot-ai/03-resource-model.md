@@ -266,6 +266,33 @@ sequenceDiagram
 
 ---
 
+## 11.3 `RES-003` 落地文件
+
+- 请求模板资源：`modules/woodot_ai/resources/ai_request_resources.h`
+- 实现：`modules/woodot_ai/resources/ai_request_resources.cpp`
+- 注册：`modules/woodot_ai/register_types.cpp`
+- 说明文档：`dev-doc/woodot-ai/03-resource-model-ai_request_resources.md`
+
+---
+
+## 11.4 `RES-004` 落地文件
+
+- 结构化计划资源：`modules/woodot_ai/resources/scene_synthesis_plan.h`
+- 实现：`modules/woodot_ai/resources/scene_synthesis_plan.cpp`
+- 注册：`modules/woodot_ai/register_types.cpp`
+- 说明文档：`dev-doc/woodot-ai/03-resource-model-scene_synthesis_plan.md`
+
+---
+
+## 11.5 `RES-005` 落地文件
+
+- patch 资源：`modules/woodot_ai/resources/gdscript_repair_patch.h`
+- 实现：`modules/woodot_ai/resources/gdscript_repair_patch.cpp`
+- 注册：`modules/woodot_ai/register_types.cpp`
+- 说明文档：`dev-doc/woodot-ai/03-resource-model-gdscript_repair_patch.md`
+
+---
+
 ## 12. 验收标准
 
 1. 资源对象与运行态实例完全解耦
