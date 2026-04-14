@@ -52,6 +52,7 @@ private:
 
 protected:
 	static void _bind_methods();
+	void _validate_property(PropertyInfo &p_property) const;
 
 public:
 	void set_shape(const PackedInt32Array &p_shape);
@@ -71,6 +72,8 @@ public:
 
 	bool is_device_backed() const;
 	int64_t get_element_count() const;
+	bool is_cpu_data_inspector_limited() const;
+	String get_cpu_data_preview() const;
 };
 
 VARIANT_ENUM_CAST(AITensorResource::StorageType);

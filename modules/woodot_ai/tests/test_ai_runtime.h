@@ -31,13 +31,20 @@
 #pragma once
 
 #include "../resources/ai_model_resource.h"
+#include "../resources/ai_request_resources.h"
+#include "../resources/ai_tensor_resource.h"
+#include "../resources/gdscript_repair_patch.h"
+#include "../resources/scene_synthesis_plan.h"
 #include "../runtime/ai_requests.h"
 #include "../runtime/ai_task_scheduler.h"
 
+#include "core/io/resource_loader.h"
+#include "core/io/resource_saver.h"
 #include "core/os/os.h"
 #include "core/templates/hash_map.h"
 #include "core/templates/rid_owner.h"
 #include "tests/test_macros.h"
+#include "tests/test_utils.h"
 
 namespace TestWoodotAIRuntime {
 
@@ -198,6 +205,27 @@ static Ref<AICompletionRequest> make_completion_request(const RID &p_model_rid, 
 	return request;
 }
 
+template <class T>
+static Ref<T> save_and_load_resource_roundtrip(const Ref<T> &p_resource, const String &p_extension) {
+	const String save_path = TestUtils::get_temp_path(vformat("woodot_ai_%s_roundtrip.%s", T::get_class_static(), p_extension));
+	CHECK_EQ(ResourceSaver::save(p_resource, save_path), OK);
+
+	Ref<T> loaded = ResourceLoader::load(save_path);
+	CHECK(loaded.is_valid());
+	return loaded;
+}
+
+static bool property_has_editor_usage(const Object *p_object, const StringName &p_name) {
+	List<PropertyInfo> properties;
+	p_object->get_property_list(&properties);
+	for (const List<PropertyInfo>::Element *property = properties.front(); property != nullptr; property = property->next()) {
+		if (property->get().name == p_name) {
+			return (property->get().usage & PROPERTY_USAGE_EDITOR) != 0;
+		}
+	}
+	return false;
+}
+
 TEST_CASE("[WoodotAI] Queued task cancellation drains through mailbox") {
 	MockAIBackend backend;
 	AITaskScheduler scheduler;
@@ -282,6 +310,218 @@ TEST_CASE("[WoodotAI] Synthetic scheduler soak keeps bookkeeping stable") {
 	const Dictionary profiling = stats["profiling"];
 	CHECK(int64_t(profiling["completed_jobs"]) == task_count);
 	CHECK(int64_t(profiling["mailbox_drained_updates"]) == task_count);
+}
+
+TEST_CASE("[WoodotAI] Resource serialization roundtrip preserves woodot AI resources") {
+	SUBCASE("AIModelResource") {
+		Ref<AIModelResource> resource;
+		resource.instantiate();
+		resource->set_model_path("res://models/demo.gguf");
+		resource->set_backend_type(StringName("llama"));
+		resource->set_context_size(8192);
+		resource->set_n_threads(12);
+		resource->set_n_gpu_layers(16);
+		resource->set_quantization("Q4_K_M");
+		resource->set_chat_template("{{ prompt }}");
+		resource->set_rope_scaling(1.25f);
+		resource->set_system_prompt_template("You are a builder.");
+		PackedStringArray capability_tags;
+		capability_tags.push_back("chat");
+		capability_tags.push_back("tool");
+		resource->set_capability_tags(capability_tags);
+		Dictionary extra_options;
+		extra_options["mirostat"] = true;
+		resource->set_extra_options(extra_options);
+
+		for (const String extension : { String("tres"), String("res") }) {
+			const Ref<AIModelResource> loaded = save_and_load_resource_roundtrip(resource, extension);
+			CHECK_EQ(loaded->get_model_path(), resource->get_model_path());
+			CHECK_EQ(loaded->get_backend_type(), resource->get_backend_type());
+			CHECK_EQ(loaded->get_context_size(), resource->get_context_size());
+			CHECK_EQ(loaded->get_n_threads(), resource->get_n_threads());
+			CHECK_EQ(loaded->get_n_gpu_layers(), resource->get_n_gpu_layers());
+			CHECK_EQ(loaded->get_quantization(), resource->get_quantization());
+			CHECK_EQ(loaded->get_chat_template(), resource->get_chat_template());
+			CHECK_EQ(loaded->get_rope_scaling(), doctest::Approx(resource->get_rope_scaling()));
+			CHECK_EQ(loaded->get_system_prompt_template(), resource->get_system_prompt_template());
+			CHECK(loaded->get_capability_tags() == resource->get_capability_tags());
+			CHECK(loaded->get_extra_options() == resource->get_extra_options());
+			CHECK_EQ(loaded->get_parameter_fingerprint(), resource->get_parameter_fingerprint());
+		}
+	}
+
+	SUBCASE("AITensorResource") {
+		Ref<AITensorResource> resource;
+		resource.instantiate();
+		PackedInt32Array shape;
+		shape.push_back(2);
+		shape.push_back(3);
+		resource->set_shape(shape);
+		resource->set_dtype(StringName("float32"));
+		resource->set_storage_type(AITensorResource::STORAGE_TYPE_CPU_MIRROR);
+		PackedFloat32Array cpu_values;
+		cpu_values.push_back(0.1f);
+		cpu_values.push_back(0.2f);
+		cpu_values.push_back(0.3f);
+		cpu_values.push_back(0.4f);
+		cpu_values.push_back(0.5f);
+		cpu_values.push_back(0.6f);
+		resource->set_cpu_data(cpu_values);
+		Dictionary metadata;
+		metadata["source"] = "test";
+		resource->set_metadata(metadata);
+
+		for (const String extension : { String("tres"), String("res") }) {
+			const Ref<AITensorResource> loaded = save_and_load_resource_roundtrip(resource, extension);
+			CHECK(loaded->get_shape() == resource->get_shape());
+			CHECK_EQ(loaded->get_dtype(), resource->get_dtype());
+			CHECK_EQ(loaded->get_storage_type(), resource->get_storage_type());
+			CHECK(loaded->get_cpu_data() == resource->get_cpu_data());
+			CHECK(loaded->get_metadata() == resource->get_metadata());
+		}
+	}
+
+	SUBCASE("AICompletionRequestResource") {
+		Ref<AICompletionRequestResource> resource;
+		resource.instantiate();
+		resource->set_prompt("hello");
+		resource->set_max_tokens(512);
+		resource->set_temperature(0.3f);
+		resource->set_top_p(0.8f);
+		resource->set_top_k(24);
+		resource->set_stream(true);
+		resource->set_timeout_ms(1500);
+		resource->set_priority(2);
+		resource->set_caller_tag("editor");
+		Dictionary metadata;
+		metadata["mode"] = "test";
+		resource->set_metadata(metadata);
+
+		const Ref<AICompletionRequestResource> loaded = save_and_load_resource_roundtrip(resource, "tres");
+		CHECK_EQ(loaded->get_prompt(), resource->get_prompt());
+		CHECK_EQ(loaded->get_max_tokens(), resource->get_max_tokens());
+		CHECK_EQ(loaded->get_temperature(), doctest::Approx(resource->get_temperature()));
+		CHECK_EQ(loaded->get_top_p(), doctest::Approx(resource->get_top_p()));
+		CHECK_EQ(loaded->get_top_k(), resource->get_top_k());
+		CHECK_EQ(loaded->is_streaming(), resource->is_streaming());
+		CHECK_EQ(loaded->get_timeout_ms(), resource->get_timeout_ms());
+		CHECK_EQ(loaded->get_priority(), resource->get_priority());
+		CHECK_EQ(loaded->get_caller_tag(), resource->get_caller_tag());
+		CHECK(loaded->get_metadata() == resource->get_metadata());
+	}
+
+	SUBCASE("AIEmbeddingRequestResource") {
+		Ref<AIEmbeddingRequestResource> resource;
+		resource.instantiate();
+		PackedStringArray inputs;
+		inputs.push_back("alpha");
+		inputs.push_back("beta");
+		resource->set_inputs(inputs);
+		resource->set_normalize(true);
+		resource->set_timeout_ms(2200);
+		resource->set_priority(4);
+		resource->set_caller_tag("batch");
+		Dictionary metadata;
+		metadata["tenant"] = "ci";
+		resource->set_metadata(metadata);
+
+		const Ref<AIEmbeddingRequestResource> loaded = save_and_load_resource_roundtrip(resource, "tres");
+		CHECK(loaded->get_inputs() == resource->get_inputs());
+		CHECK_EQ(loaded->is_normalized(), resource->is_normalized());
+		CHECK_EQ(loaded->get_timeout_ms(), resource->get_timeout_ms());
+		CHECK_EQ(loaded->get_priority(), resource->get_priority());
+		CHECK_EQ(loaded->get_caller_tag(), resource->get_caller_tag());
+		CHECK(loaded->get_metadata() == resource->get_metadata());
+	}
+
+	SUBCASE("SceneSynthesisPlan") {
+		Ref<SceneSynthesisPlan> resource;
+		resource.instantiate();
+		resource->set_prompt("build a room");
+		resource->set_source_ir("{\"root\":\"Node3D\"}");
+		resource->set_node_operations(Array::make(String("add_camera"), String("add_light")));
+		resource->set_resource_operations(Array::make(String("create_material")));
+		resource->set_warnings(Array::make(String("needs_navmesh")));
+		Dictionary metadata;
+		metadata["planner"] = "test";
+		resource->set_metadata(metadata);
+
+		const Ref<SceneSynthesisPlan> loaded = save_and_load_resource_roundtrip(resource, "tres");
+		CHECK_EQ(loaded->get_prompt(), resource->get_prompt());
+		CHECK_EQ(loaded->get_source_ir(), resource->get_source_ir());
+		CHECK(loaded->get_node_operations() == resource->get_node_operations());
+		CHECK(loaded->get_resource_operations() == resource->get_resource_operations());
+		CHECK(loaded->get_warnings() == resource->get_warnings());
+		CHECK(loaded->get_metadata() == resource->get_metadata());
+	}
+
+	SUBCASE("GDScriptRepairPatch") {
+		Ref<GDScriptRepairPatch> resource;
+		resource.instantiate();
+		resource->set_script_path("res://scripts/demo.gd");
+		resource->set_diagnostic_message("Unexpected indent");
+		resource->set_line_start(12);
+		resource->set_line_end(14);
+		resource->set_replacement_text("pass");
+		resource->set_hunks(Array::make(String("@@ -12,3 +12,1 @@")));
+		resource->set_warnings(Array::make(String("manual review required")));
+		Dictionary metadata;
+		metadata["tool"] = "repair";
+		resource->set_metadata(metadata);
+
+		const Ref<GDScriptRepairPatch> loaded = save_and_load_resource_roundtrip(resource, "tres");
+		CHECK_EQ(loaded->get_script_path(), resource->get_script_path());
+		CHECK_EQ(loaded->get_diagnostic_message(), resource->get_diagnostic_message());
+		CHECK_EQ(loaded->get_line_start(), resource->get_line_start());
+		CHECK_EQ(loaded->get_line_end(), resource->get_line_end());
+		CHECK_EQ(loaded->get_replacement_text(), resource->get_replacement_text());
+		CHECK(loaded->get_hunks() == resource->get_hunks());
+		CHECK(loaded->get_warnings() == resource->get_warnings());
+		CHECK(loaded->get_metadata() == resource->get_metadata());
+	}
+}
+
+TEST_CASE("[WoodotAI] AIModelResource tracks parameter fingerprint and runtime dirty state") {
+	Ref<AIModelResource> resource;
+	resource.instantiate();
+
+	const String initial_fingerprint = resource->get_parameter_fingerprint();
+	CHECK_FALSE(initial_fingerprint.is_empty());
+	CHECK_FALSE(resource->is_runtime_dirty());
+
+	resource->mark_runtime_clean();
+	CHECK_FALSE(resource->is_runtime_dirty());
+
+	resource->set_context_size(resource->get_context_size() + 1024);
+	CHECK(resource->is_runtime_dirty());
+	CHECK_NE(resource->get_parameter_fingerprint(), initial_fingerprint);
+
+	resource->mark_runtime_clean();
+	CHECK_FALSE(resource->is_runtime_dirty());
+
+	resource->set_context_size(resource->get_context_size());
+	CHECK_FALSE(resource->is_runtime_dirty());
+
+	Dictionary options = resource->get_extra_options();
+	options["draft"] = true;
+	resource->set_extra_options(options);
+	CHECK(resource->is_runtime_dirty());
+}
+
+TEST_CASE("[WoodotAI] AITensorResource limits large CPU buffers in inspector metadata") {
+	Ref<AITensorResource> resource;
+	resource.instantiate();
+
+	PackedFloat32Array cpu_data;
+	cpu_data.resize(300);
+	for (int i = 0; i < cpu_data.size(); i++) {
+		cpu_data.set(i, static_cast<float>(i) * 0.5f);
+	}
+	resource->set_cpu_data(cpu_data);
+
+	CHECK(resource->is_cpu_data_inspector_limited());
+	CHECK(resource->get_cpu_data_preview().contains("inspector display limited"));
+	CHECK_FALSE(property_has_editor_usage(resource.ptr(), "cpu_data"));
 }
 
 } // namespace TestWoodotAIRuntime

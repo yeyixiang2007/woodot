@@ -41,6 +41,10 @@
 #include "modules/woodot_ai/runtime/ai_task_handle.h"
 #include "modules/woodot_ai/runtime/ai_runtime_server.h"
 
+#ifdef TESTS_ENABLED
+#include "modules/woodot_ai/tests/test_ai_runtime.h"
+#endif
+
 static AIRuntimeServer *woodot_ai_runtime_server = nullptr;
 
 void initialize_woodot_ai_module(ModuleInitializationLevel p_level) {

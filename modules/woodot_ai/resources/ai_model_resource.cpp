@@ -31,6 +31,7 @@
 #include "modules/woodot_ai/resources/ai_model_resource.h"
 
 #include "core/object/class_db.h"
+#include "core/variant/variant_parser.h"
 
 void AIModelResource::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_model_path", "model_path"), &AIModelResource::set_model_path);
@@ -55,6 +56,9 @@ void AIModelResource::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_capability_tags"), &AIModelResource::get_capability_tags);
 	ClassDB::bind_method(D_METHOD("set_extra_options", "extra_options"), &AIModelResource::set_extra_options);
 	ClassDB::bind_method(D_METHOD("get_extra_options"), &AIModelResource::get_extra_options);
+	ClassDB::bind_method(D_METHOD("get_parameter_fingerprint"), &AIModelResource::get_parameter_fingerprint);
+	ClassDB::bind_method(D_METHOD("mark_runtime_clean"), &AIModelResource::mark_runtime_clean);
+	ClassDB::bind_method(D_METHOD("is_runtime_dirty"), &AIModelResource::is_runtime_dirty);
 
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "model_path"), "set_model_path", "get_model_path");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING_NAME, "backend_type"), "set_backend_type", "get_backend_type");
@@ -68,10 +72,12 @@ void AIModelResource::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "system_prompt_template", PROPERTY_HINT_MULTILINE_TEXT), "set_system_prompt_template", "get_system_prompt_template");
 	ADD_PROPERTY(PropertyInfo(Variant::PACKED_STRING_ARRAY, "capability_tags"), "set_capability_tags", "get_capability_tags");
 	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "extra_options"), "set_extra_options", "get_extra_options");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "parameter_fingerprint", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_EDITOR | PROPERTY_USAGE_READ_ONLY), "", "get_parameter_fingerprint");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "runtime_dirty", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_EDITOR | PROPERTY_USAGE_READ_ONLY), "", "is_runtime_dirty");
 }
 
 #define AI_MODEL_RESOURCE_REF_ACCESSORS(m_type, m_name) \
-	void AIModelResource::set_##m_name(const m_type &p_##m_name) { m_name = p_##m_name; } \
+	void AIModelResource::set_##m_name(const m_type &p_##m_name) { m_name = p_##m_name; _notify_parameter_changed(); } \
 	m_type AIModelResource::get_##m_name() const { return m_name; }
 
 AI_MODEL_RESOURCE_REF_ACCESSORS(String, model_path)
@@ -84,6 +90,7 @@ AI_MODEL_RESOURCE_REF_ACCESSORS(Dictionary, extra_options)
 
 void AIModelResource::set_context_size(int32_t p_context_size) {
 	context_size = p_context_size;
+	_notify_parameter_changed();
 }
 
 int32_t AIModelResource::get_context_size() const {
@@ -92,6 +99,7 @@ int32_t AIModelResource::get_context_size() const {
 
 void AIModelResource::set_n_threads(int32_t p_n_threads) {
 	n_threads = p_n_threads;
+	_notify_parameter_changed();
 }
 
 int32_t AIModelResource::get_n_threads() const {
@@ -100,6 +108,7 @@ int32_t AIModelResource::get_n_threads() const {
 
 void AIModelResource::set_n_gpu_layers(int32_t p_n_gpu_layers) {
 	n_gpu_layers = p_n_gpu_layers;
+	_notify_parameter_changed();
 }
 
 int32_t AIModelResource::get_n_gpu_layers() const {
@@ -108,8 +117,49 @@ int32_t AIModelResource::get_n_gpu_layers() const {
 
 void AIModelResource::set_rope_scaling(float p_rope_scaling) {
 	rope_scaling = p_rope_scaling;
+	_notify_parameter_changed();
 }
 
 float AIModelResource::get_rope_scaling() const {
 	return rope_scaling;
+}
+
+String AIModelResource::_build_parameter_fingerprint() const {
+	Array parameters;
+	parameters.push_back(model_path);
+	parameters.push_back(backend_type);
+	parameters.push_back(context_size);
+	parameters.push_back(n_threads);
+	parameters.push_back(n_gpu_layers);
+	parameters.push_back(quantization);
+	parameters.push_back(chat_template);
+	parameters.push_back(rope_scaling);
+	parameters.push_back(system_prompt_template);
+	parameters.push_back(capability_tags);
+	parameters.push_back(extra_options);
+
+	String serialized;
+	Error err = VariantWriter::write_to_string(parameters, serialized);
+	ERR_FAIL_COND_V_MSG(err != OK, String(), "Failed to serialize AI model parameters for fingerprinting.");
+	return serialized.sha256_text();
+}
+
+void AIModelResource::_notify_parameter_changed() {
+	if (dirty_tracking_enabled) {
+		runtime_dirty = _build_parameter_fingerprint() != clean_parameter_fingerprint;
+	}
+}
+
+String AIModelResource::get_parameter_fingerprint() const {
+	return _build_parameter_fingerprint();
+}
+
+void AIModelResource::mark_runtime_clean() {
+	clean_parameter_fingerprint = _build_parameter_fingerprint();
+	dirty_tracking_enabled = true;
+	runtime_dirty = false;
+}
+
+bool AIModelResource::is_runtime_dirty() const {
+	return runtime_dirty;
 }

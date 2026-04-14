@@ -46,9 +46,14 @@ class AIModelResource : public Resource {
 	String system_prompt_template;
 	PackedStringArray capability_tags;
 	Dictionary extra_options;
+	String clean_parameter_fingerprint;
+	bool dirty_tracking_enabled = false;
+	bool runtime_dirty = false;
 
 protected:
 	static void _bind_methods();
+	String _build_parameter_fingerprint() const;
+	void _notify_parameter_changed();
 
 public:
 	void set_model_path(const String &p_model_path);
@@ -83,4 +88,8 @@ public:
 
 	void set_extra_options(const Dictionary &p_extra_options);
 	Dictionary get_extra_options() const;
+
+	String get_parameter_fingerprint() const;
+	void mark_runtime_clean();
+	bool is_runtime_dirty() const;
 };

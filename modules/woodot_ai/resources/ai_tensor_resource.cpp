@@ -32,6 +32,9 @@
 
 #include "core/object/class_db.h"
 
+static constexpr int64_t AI_TENSOR_INSPECTOR_PREVIEW_LIMIT = 256;
+static constexpr int32_t AI_TENSOR_PREVIEW_SAMPLE_COUNT = 8;
+
 void AITensorResource::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_shape", "shape"), &AITensorResource::set_shape);
 	ClassDB::bind_method(D_METHOD("get_shape"), &AITensorResource::get_shape);
@@ -45,12 +48,15 @@ void AITensorResource::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_metadata"), &AITensorResource::get_metadata);
 	ClassDB::bind_method(D_METHOD("is_device_backed"), &AITensorResource::is_device_backed);
 	ClassDB::bind_method(D_METHOD("get_element_count"), &AITensorResource::get_element_count);
+	ClassDB::bind_method(D_METHOD("is_cpu_data_inspector_limited"), &AITensorResource::is_cpu_data_inspector_limited);
+	ClassDB::bind_method(D_METHOD("get_cpu_data_preview"), &AITensorResource::get_cpu_data_preview);
 
 	ADD_PROPERTY(PropertyInfo(Variant::PACKED_INT32_ARRAY, "shape"), "set_shape", "get_shape");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING_NAME, "dtype"), "set_dtype", "get_dtype");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "storage_type"), "set_storage_type", "get_storage_type");
 	ADD_PROPERTY(PropertyInfo(Variant::PACKED_FLOAT32_ARRAY, "cpu_data"), "set_cpu_data", "get_cpu_data");
 	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "metadata"), "set_metadata", "get_metadata");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "cpu_data_preview", PROPERTY_HINT_MULTILINE_TEXT, "", PROPERTY_USAGE_EDITOR | PROPERTY_USAGE_READ_ONLY), "", "get_cpu_data_preview");
 
 	BIND_ENUM_CONSTANT(STORAGE_TYPE_CPU);
 	BIND_ENUM_CONSTANT(STORAGE_TYPE_CPU_MIRROR);
@@ -63,8 +69,19 @@ void AITensorResource::_bind_methods() {
 
 AI_TENSOR_RESOURCE_REF_ACCESSORS(PackedInt32Array, shape)
 AI_TENSOR_RESOURCE_REF_ACCESSORS(StringName, dtype)
-AI_TENSOR_RESOURCE_REF_ACCESSORS(PackedFloat32Array, cpu_data)
 AI_TENSOR_RESOURCE_REF_ACCESSORS(Dictionary, metadata)
+
+void AITensorResource::set_cpu_data(const PackedFloat32Array &p_cpu_data) {
+	const bool was_limited = is_cpu_data_inspector_limited();
+	cpu_data = p_cpu_data;
+	if (was_limited != is_cpu_data_inspector_limited()) {
+		notify_property_list_changed();
+	}
+}
+
+PackedFloat32Array AITensorResource::get_cpu_data() const {
+	return cpu_data;
+}
 
 void AITensorResource::set_storage_type(StorageType p_storage_type) {
 	storage_type = p_storage_type;
@@ -88,4 +105,34 @@ int64_t AITensorResource::get_element_count() const {
 		count *= shape[i];
 	}
 	return count;
+}
+
+bool AITensorResource::is_cpu_data_inspector_limited() const {
+	return cpu_data.size() > AI_TENSOR_INSPECTOR_PREVIEW_LIMIT;
+}
+
+String AITensorResource::get_cpu_data_preview() const {
+	const int32_t element_count = cpu_data.size();
+	if (element_count == 0) {
+		return "No CPU tensor data.";
+	}
+
+	const int32_t preview_count = MIN(element_count, AI_TENSOR_PREVIEW_SAMPLE_COUNT);
+	PackedStringArray preview_values;
+	preview_values.resize(preview_count);
+	for (int32_t i = 0; i < preview_count; i++) {
+		preview_values.set(i, String::num_real(cpu_data[i]));
+	}
+
+	if (!is_cpu_data_inspector_limited()) {
+		return vformat("elements=%d values=[%s]", element_count, String(", ").join(preview_values));
+	}
+
+	return vformat("elements=%d preview=[%s] ... inspector display limited to %d values", element_count, String(", ").join(preview_values), AI_TENSOR_INSPECTOR_PREVIEW_LIMIT);
+}
+
+void AITensorResource::_validate_property(PropertyInfo &p_property) const {
+	if (p_property.name == "cpu_data" && is_cpu_data_inspector_limited()) {
+		p_property.usage = PROPERTY_USAGE_STORAGE;
+	}
 }
