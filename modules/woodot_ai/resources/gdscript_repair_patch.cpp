@@ -60,15 +60,29 @@ void GDScriptRepairPatch::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "metadata"), "set_metadata", "get_metadata");
 }
 
-#define GDSCRIPT_REPAIR_PATCH_ACCESSORS(m_type, m_name) \
+#define GDSCRIPT_REPAIR_PATCH_REF_ACCESSORS(m_type, m_name) \
 	void GDScriptRepairPatch::set_##m_name(const m_type &p_##m_name) { m_name = p_##m_name; } \
 	m_type GDScriptRepairPatch::get_##m_name() const { return m_name; }
 
-GDSCRIPT_REPAIR_PATCH_ACCESSORS(String, script_path)
-GDSCRIPT_REPAIR_PATCH_ACCESSORS(String, diagnostic_message)
-GDSCRIPT_REPAIR_PATCH_ACCESSORS(int32_t, line_start)
-GDSCRIPT_REPAIR_PATCH_ACCESSORS(int32_t, line_end)
-GDSCRIPT_REPAIR_PATCH_ACCESSORS(String, replacement_text)
-GDSCRIPT_REPAIR_PATCH_ACCESSORS(Array, hunks)
-GDSCRIPT_REPAIR_PATCH_ACCESSORS(Array, warnings)
-GDSCRIPT_REPAIR_PATCH_ACCESSORS(Dictionary, metadata)
+GDSCRIPT_REPAIR_PATCH_REF_ACCESSORS(String, script_path)
+GDSCRIPT_REPAIR_PATCH_REF_ACCESSORS(String, diagnostic_message)
+GDSCRIPT_REPAIR_PATCH_REF_ACCESSORS(String, replacement_text)
+GDSCRIPT_REPAIR_PATCH_REF_ACCESSORS(Array, hunks)
+GDSCRIPT_REPAIR_PATCH_REF_ACCESSORS(Array, warnings)
+GDSCRIPT_REPAIR_PATCH_REF_ACCESSORS(Dictionary, metadata)
+
+void GDScriptRepairPatch::set_line_start(int32_t p_line_start) {
+	line_start = p_line_start;
+}
+
+int32_t GDScriptRepairPatch::get_line_start() const {
+	return line_start;
+}
+
+void GDScriptRepairPatch::set_line_end(int32_t p_line_end) {
+	line_end = p_line_end;
+}
+
+int32_t GDScriptRepairPatch::get_line_end() const {
+	return line_end;
+}

@@ -88,19 +88,61 @@ void AIEmbeddingRequestResource::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "metadata"), "set_metadata", "get_metadata");
 }
 
-#define AI_REQUEST_RESOURCE_ACCESSORS(m_class, m_type, m_name) \
+#define AI_REQUEST_RESOURCE_REF_ACCESSORS(m_class, m_type, m_name) \
 	void m_class::set_##m_name(const m_type &p_##m_name) { m_name = p_##m_name; } \
 	m_type m_class::get_##m_name() const { return m_name; }
 
-AI_REQUEST_RESOURCE_ACCESSORS(AICompletionRequestResource, String, prompt)
-AI_REQUEST_RESOURCE_ACCESSORS(AICompletionRequestResource, int32_t, max_tokens)
-AI_REQUEST_RESOURCE_ACCESSORS(AICompletionRequestResource, float, temperature)
-AI_REQUEST_RESOURCE_ACCESSORS(AICompletionRequestResource, float, top_p)
-AI_REQUEST_RESOURCE_ACCESSORS(AICompletionRequestResource, int32_t, top_k)
-AI_REQUEST_RESOURCE_ACCESSORS(AICompletionRequestResource, int32_t, timeout_ms)
-AI_REQUEST_RESOURCE_ACCESSORS(AICompletionRequestResource, int32_t, priority)
-AI_REQUEST_RESOURCE_ACCESSORS(AICompletionRequestResource, String, caller_tag)
-AI_REQUEST_RESOURCE_ACCESSORS(AICompletionRequestResource, Dictionary, metadata)
+AI_REQUEST_RESOURCE_REF_ACCESSORS(AICompletionRequestResource, String, prompt)
+AI_REQUEST_RESOURCE_REF_ACCESSORS(AICompletionRequestResource, String, caller_tag)
+AI_REQUEST_RESOURCE_REF_ACCESSORS(AICompletionRequestResource, Dictionary, metadata)
+
+void AICompletionRequestResource::set_max_tokens(int32_t p_max_tokens) {
+	max_tokens = p_max_tokens;
+}
+
+int32_t AICompletionRequestResource::get_max_tokens() const {
+	return max_tokens;
+}
+
+void AICompletionRequestResource::set_temperature(float p_temperature) {
+	temperature = p_temperature;
+}
+
+float AICompletionRequestResource::get_temperature() const {
+	return temperature;
+}
+
+void AICompletionRequestResource::set_top_p(float p_top_p) {
+	top_p = p_top_p;
+}
+
+float AICompletionRequestResource::get_top_p() const {
+	return top_p;
+}
+
+void AICompletionRequestResource::set_top_k(int32_t p_top_k) {
+	top_k = p_top_k;
+}
+
+int32_t AICompletionRequestResource::get_top_k() const {
+	return top_k;
+}
+
+void AICompletionRequestResource::set_timeout_ms(int32_t p_timeout_ms) {
+	timeout_ms = p_timeout_ms;
+}
+
+int32_t AICompletionRequestResource::get_timeout_ms() const {
+	return timeout_ms;
+}
+
+void AICompletionRequestResource::set_priority(int32_t p_priority) {
+	priority = p_priority;
+}
+
+int32_t AICompletionRequestResource::get_priority() const {
+	return priority;
+}
 
 void AICompletionRequestResource::set_stream(bool p_stream) {
 	stream = p_stream;
@@ -110,11 +152,25 @@ bool AICompletionRequestResource::is_streaming() const {
 	return stream;
 }
 
-AI_REQUEST_RESOURCE_ACCESSORS(AIEmbeddingRequestResource, PackedStringArray, inputs)
-AI_REQUEST_RESOURCE_ACCESSORS(AIEmbeddingRequestResource, int32_t, timeout_ms)
-AI_REQUEST_RESOURCE_ACCESSORS(AIEmbeddingRequestResource, int32_t, priority)
-AI_REQUEST_RESOURCE_ACCESSORS(AIEmbeddingRequestResource, String, caller_tag)
-AI_REQUEST_RESOURCE_ACCESSORS(AIEmbeddingRequestResource, Dictionary, metadata)
+AI_REQUEST_RESOURCE_REF_ACCESSORS(AIEmbeddingRequestResource, PackedStringArray, inputs)
+AI_REQUEST_RESOURCE_REF_ACCESSORS(AIEmbeddingRequestResource, String, caller_tag)
+AI_REQUEST_RESOURCE_REF_ACCESSORS(AIEmbeddingRequestResource, Dictionary, metadata)
+
+void AIEmbeddingRequestResource::set_timeout_ms(int32_t p_timeout_ms) {
+	timeout_ms = p_timeout_ms;
+}
+
+int32_t AIEmbeddingRequestResource::get_timeout_ms() const {
+	return timeout_ms;
+}
+
+void AIEmbeddingRequestResource::set_priority(int32_t p_priority) {
+	priority = p_priority;
+}
+
+int32_t AIEmbeddingRequestResource::get_priority() const {
+	return priority;
+}
 
 void AIEmbeddingRequestResource::set_normalize(bool p_normalize) {
 	normalize = p_normalize;

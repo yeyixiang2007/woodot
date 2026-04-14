@@ -70,18 +70,46 @@ void AIModelResource::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "extra_options"), "set_extra_options", "get_extra_options");
 }
 
-#define AI_MODEL_RESOURCE_ACCESSORS(m_type, m_name) \
+#define AI_MODEL_RESOURCE_REF_ACCESSORS(m_type, m_name) \
 	void AIModelResource::set_##m_name(const m_type &p_##m_name) { m_name = p_##m_name; } \
 	m_type AIModelResource::get_##m_name() const { return m_name; }
 
-AI_MODEL_RESOURCE_ACCESSORS(String, model_path)
-AI_MODEL_RESOURCE_ACCESSORS(StringName, backend_type)
-AI_MODEL_RESOURCE_ACCESSORS(int32_t, context_size)
-AI_MODEL_RESOURCE_ACCESSORS(int32_t, n_threads)
-AI_MODEL_RESOURCE_ACCESSORS(int32_t, n_gpu_layers)
-AI_MODEL_RESOURCE_ACCESSORS(String, quantization)
-AI_MODEL_RESOURCE_ACCESSORS(String, chat_template)
-AI_MODEL_RESOURCE_ACCESSORS(float, rope_scaling)
-AI_MODEL_RESOURCE_ACCESSORS(String, system_prompt_template)
-AI_MODEL_RESOURCE_ACCESSORS(PackedStringArray, capability_tags)
-AI_MODEL_RESOURCE_ACCESSORS(Dictionary, extra_options)
+AI_MODEL_RESOURCE_REF_ACCESSORS(String, model_path)
+AI_MODEL_RESOURCE_REF_ACCESSORS(StringName, backend_type)
+AI_MODEL_RESOURCE_REF_ACCESSORS(String, quantization)
+AI_MODEL_RESOURCE_REF_ACCESSORS(String, chat_template)
+AI_MODEL_RESOURCE_REF_ACCESSORS(String, system_prompt_template)
+AI_MODEL_RESOURCE_REF_ACCESSORS(PackedStringArray, capability_tags)
+AI_MODEL_RESOURCE_REF_ACCESSORS(Dictionary, extra_options)
+
+void AIModelResource::set_context_size(int32_t p_context_size) {
+	context_size = p_context_size;
+}
+
+int32_t AIModelResource::get_context_size() const {
+	return context_size;
+}
+
+void AIModelResource::set_n_threads(int32_t p_n_threads) {
+	n_threads = p_n_threads;
+}
+
+int32_t AIModelResource::get_n_threads() const {
+	return n_threads;
+}
+
+void AIModelResource::set_n_gpu_layers(int32_t p_n_gpu_layers) {
+	n_gpu_layers = p_n_gpu_layers;
+}
+
+int32_t AIModelResource::get_n_gpu_layers() const {
+	return n_gpu_layers;
+}
+
+void AIModelResource::set_rope_scaling(float p_rope_scaling) {
+	rope_scaling = p_rope_scaling;
+}
+
+float AIModelResource::get_rope_scaling() const {
+	return rope_scaling;
+}

@@ -57,15 +57,22 @@ void AITensorResource::_bind_methods() {
 	BIND_ENUM_CONSTANT(STORAGE_TYPE_EXTERNAL_DEVICE);
 }
 
-#define AI_TENSOR_RESOURCE_ACCESSORS(m_type, m_name) \
+#define AI_TENSOR_RESOURCE_REF_ACCESSORS(m_type, m_name) \
 	void AITensorResource::set_##m_name(const m_type &p_##m_name) { m_name = p_##m_name; } \
 	m_type AITensorResource::get_##m_name() const { return m_name; }
 
-AI_TENSOR_RESOURCE_ACCESSORS(PackedInt32Array, shape)
-AI_TENSOR_RESOURCE_ACCESSORS(StringName, dtype)
-AI_TENSOR_RESOURCE_ACCESSORS(AITensorResource::StorageType, storage_type)
-AI_TENSOR_RESOURCE_ACCESSORS(PackedFloat32Array, cpu_data)
-AI_TENSOR_RESOURCE_ACCESSORS(Dictionary, metadata)
+AI_TENSOR_RESOURCE_REF_ACCESSORS(PackedInt32Array, shape)
+AI_TENSOR_RESOURCE_REF_ACCESSORS(StringName, dtype)
+AI_TENSOR_RESOURCE_REF_ACCESSORS(PackedFloat32Array, cpu_data)
+AI_TENSOR_RESOURCE_REF_ACCESSORS(Dictionary, metadata)
+
+void AITensorResource::set_storage_type(StorageType p_storage_type) {
+	storage_type = p_storage_type;
+}
+
+AITensorResource::StorageType AITensorResource::get_storage_type() const {
+	return storage_type;
+}
 
 bool AITensorResource::is_device_backed() const {
 	return storage_type != STORAGE_TYPE_CPU;

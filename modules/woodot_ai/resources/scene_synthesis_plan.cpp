@@ -54,13 +54,13 @@ void SceneSynthesisPlan::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "metadata"), "set_metadata", "get_metadata");
 }
 
-#define SCENE_SYNTHESIS_PLAN_ACCESSORS(m_type, m_name) \
+#define SCENE_SYNTHESIS_PLAN_REF_ACCESSORS(m_type, m_name) \
 	void SceneSynthesisPlan::set_##m_name(const m_type &p_##m_name) { m_name = p_##m_name; } \
 	m_type SceneSynthesisPlan::get_##m_name() const { return m_name; }
 
-SCENE_SYNTHESIS_PLAN_ACCESSORS(String, prompt)
-SCENE_SYNTHESIS_PLAN_ACCESSORS(String, source_ir)
-SCENE_SYNTHESIS_PLAN_ACCESSORS(Array, node_operations)
-SCENE_SYNTHESIS_PLAN_ACCESSORS(Array, resource_operations)
-SCENE_SYNTHESIS_PLAN_ACCESSORS(Array, warnings)
-SCENE_SYNTHESIS_PLAN_ACCESSORS(Dictionary, metadata)
+SCENE_SYNTHESIS_PLAN_REF_ACCESSORS(String, prompt)
+SCENE_SYNTHESIS_PLAN_REF_ACCESSORS(String, source_ir)
+SCENE_SYNTHESIS_PLAN_REF_ACCESSORS(Array, node_operations)
+SCENE_SYNTHESIS_PLAN_REF_ACCESSORS(Array, resource_operations)
+SCENE_SYNTHESIS_PLAN_REF_ACCESSORS(Array, warnings)
+SCENE_SYNTHESIS_PLAN_REF_ACCESSORS(Dictionary, metadata)
