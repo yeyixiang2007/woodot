@@ -28,6 +28,8 @@
    编辑器协同、上下文收集、Node 树生成、GDScript 修复、预览与回滚
 6. [05-import-pipeline-ecosystem.md](/d:/Documents/GitHub/woodot/dev-doc/woodot-ai/05-import-pipeline-ecosystem.md)
    AI Importer、导出元数据、模型缓存、扩展 API、生态演进
+7. [06-current-status-and-delivery-plan.md](/d:/Documents/GitHub/woodot/dev-doc/woodot-ai/06-current-status-and-delivery-plan.md)
+   当前实现与目标能力对比、阶段判断、分阶段落地步骤和里程碑
 
 ---
 
@@ -38,6 +40,7 @@
 3. 再看运行时推理，把“能跑”链路打通。
 4. 再看资源模型，把运行时对象和序列化对象拆开。
 5. 再看编辑器协同与资源管线，避免过早做高风险上层功能。
+6. 最后看当前状态与交付计划，确定接下来每个阶段应该收口什么。
 
 ---
 

@@ -35,6 +35,9 @@
 #include "../resources/ai_tensor_resource.h"
 #include "../resources/gdscript_repair_patch.h"
 #include "../resources/scene_synthesis_plan.h"
+#include "../import/ai_extension_api.h"
+#include "../import/ai_import_orchestrator.h"
+#include "../import/model_cache_manager.h"
 #include "../runtime/ai_requests.h"
 #include "../runtime/ai_task_scheduler.h"
 
@@ -235,7 +238,6 @@ static bool property_has_editor_usage(const Object *p_object, const StringName &
 	return false;
 }
 
-#ifdef TOOLS_ENABLED
 template <class T>
 class ScopedEditorSingleton {
 	T *instance = nullptr;
@@ -266,6 +268,7 @@ public:
 	}
 };
 
+#ifdef TOOLS_ENABLED
 static Ref<AITaskHandle> make_completed_text_task(const String &p_text, const Dictionary &p_metadata = Dictionary()) {
 	Ref<AITaskHandle> handle;
 	handle.instantiate();
@@ -586,6 +589,90 @@ TEST_CASE("[WoodotAI] AITensorResource limits large CPU buffers in inspector met
 	CHECK(resource->is_cpu_data_inspector_limited());
 	CHECK(resource->get_cpu_data_preview().contains("inspector display limited"));
 	CHECK_FALSE(property_has_editor_usage(resource.ptr(), "cpu_data"));
+}
+
+TEST_CASE("[WoodotAI] Import orchestrator fail-open branches fall back safely") {
+	ScopedEditorSingleton<ModelCacheManager> cache_manager(ModelCacheManager::get_singleton());
+	ScopedEditorSingleton<AIImportOrchestrator> orchestrator(AIImportOrchestrator::get_singleton());
+
+	orchestrator->set_enabled(false);
+	orchestrator->set_fail_open(true);
+	orchestrator->set_asset_annotation_enabled(true);
+	orchestrator->set_mesh_postprocess_enabled(false);
+	orchestrator->set_texture_enhancement_enabled(false);
+
+	const Dictionary disabled_result = orchestrator->orchestrate_import("res://assets/crate.glb", "scene", Dictionary());
+	CHECK(bool(disabled_result["ok"]));
+	CHECK(bool(disabled_result["fallback_to_base_import"]));
+	CHECK_FALSE(bool(disabled_result["ai_planned"]));
+	CHECK_EQ(String(disabled_result["reason"]), String("orchestrator_disabled"));
+
+	orchestrator->set_enabled(true);
+	orchestrator->set_asset_annotation_enabled(false);
+	const Dictionary no_pass_result = orchestrator->orchestrate_import("res://assets/crate.glb", "scene", Dictionary());
+	CHECK(bool(no_pass_result["ok"]));
+	CHECK(bool(no_pass_result["fallback_to_base_import"]));
+	CHECK_EQ(String(no_pass_result["reason"]), String("no_passes_enabled"));
+
+	orchestrator->set_asset_annotation_enabled(true);
+	orchestrator->set_fail_open(true);
+	const Dictionary runtime_missing_result = orchestrator->orchestrate_import("res://assets/crate.glb", "scene", Dictionary());
+	CHECK(bool(runtime_missing_result["ok"]));
+	CHECK(bool(runtime_missing_result["fallback_to_base_import"]));
+	CHECK_EQ(String(runtime_missing_result["reason"]), String("runtime_unavailable"));
+
+	orchestrator->set_fail_open(false);
+	const Dictionary fail_closed_result = orchestrator->orchestrate_import("res://assets/crate.glb", "scene", Dictionary());
+	CHECK_FALSE(bool(fail_closed_result["ok"]));
+	CHECK(bool(fail_closed_result["fallback_to_base_import"]));
+	CHECK_EQ(String(fail_closed_result["reason"]), String("runtime_unavailable"));
+
+	const Dictionary status = orchestrator->get_orchestrator_status();
+	CHECK(int64_t(status["inspected_imports"]) == 4);
+	CHECK(int64_t(status["fallback_imports"]) == 4);
+	CHECK(int64_t(status["ai_candidate_imports"]) == 2);
+}
+
+TEST_CASE("[WoodotAI] Import extension API exposes whitelist decisions without runtime") {
+	ScopedEditorSingleton<ModelCacheManager> cache_manager(ModelCacheManager::get_singleton());
+	ScopedEditorSingleton<AIImportOrchestrator> orchestrator(AIImportOrchestrator::get_singleton());
+	ScopedEditorSingleton<AIExtensionAPI> extension_api(AIExtensionAPI::get_singleton());
+
+	orchestrator->set_enabled(true);
+	orchestrator->set_fail_open(true);
+	orchestrator->set_asset_annotation_enabled(true);
+
+	CHECK_FALSE(extension_api->has_runtime_server());
+	CHECK(extension_api->has_import_orchestrator());
+	CHECK(extension_api->has_model_cache_manager());
+	CHECK_FALSE(extension_api->is_ready());
+
+	Array requested_artifacts;
+	Dictionary allowed_artifact;
+	allowed_artifact["category"] = "annotation_sidecar";
+	allowed_artifact["platform_tag"] = "desktop";
+	requested_artifacts.push_back(allowed_artifact);
+
+	Dictionary rejected_artifact;
+	rejected_artifact["category"] = "quantized_variant";
+	rejected_artifact["platform_tag"] = "desktop";
+	requested_artifacts.push_back(rejected_artifact);
+
+	const Dictionary bundle_plan = extension_api->build_export_bundle_plan("desktop", requested_artifacts);
+	const Array allowed = bundle_plan["allowed_artifacts"];
+	const Array rejected = bundle_plan["rejected_artifacts"];
+	const Array warnings = bundle_plan["warnings"];
+	CHECK_EQ(allowed.size(), 1);
+	CHECK_EQ(rejected.size(), 1);
+	CHECK_FALSE(warnings.is_empty());
+
+	const Dictionary whitelist = extension_api->get_export_artifact_whitelist();
+	const PackedStringArray allowed_categories = whitelist["allowed_categories"];
+	CHECK(allowed_categories.has("annotation_sidecar"));
+	CHECK_FALSE(extension_api->is_export_artifact_allowed("quantized_variant", "desktop"));
+
+	const Dictionary import_result = extension_api->orchestrate_import("res://assets/tree.glb", "scene", Dictionary());
+	CHECK_EQ(String(import_result["reason"]), String("runtime_unavailable"));
 }
 
 #ifdef TOOLS_ENABLED

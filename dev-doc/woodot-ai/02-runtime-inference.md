@@ -476,3 +476,19 @@ flowchart TD
 3. 流式输出不阻塞主循环
 4. 主线程回收符合线程安全约束
 5. 有可读的错误码、取消和统计接口
+
+---
+
+## 15. 当前阶段提醒
+
+当前 runtime 基础设施、任务调度和回收链路已经形成，但 `LlamaBackend` 仍处于 skeleton 阶段。
+
+现阶段最优先的落地动作不是继续扩张上层功能，而是先打通：
+
+1. 真实本地模型加载
+2. 最小 completion 执行路径
+3. streaming / cancel / timeout 的真实后端闭环
+
+跨模块的完成度对比和分阶段推进建议，参考：
+
+- `06-current-status-and-delivery-plan.md`

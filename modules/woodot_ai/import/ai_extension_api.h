@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  model_cache_manager.h                                                 */
+/*  ai_extension_api.h                                                    */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -32,68 +32,37 @@
 
 #include "core/object/object.h"
 
+class AIRuntimeServer;
 class AIImportOrchestrator;
-class AIModelResource;
+class ModelCacheManager;
 
-class ModelCacheManager : public Object {
-	GDCLASS(ModelCacheManager, Object);
+class AIExtensionAPI : public Object {
+	GDCLASS(AIExtensionAPI, Object);
 
-	static ModelCacheManager *singleton;
-
-	uint64_t stored_sidecars = 0;
-	mutable uint64_t loaded_sidecars = 0;
-	uint64_t stored_model_manifests = 0;
-
-	static String _setting_path_enabled();
-	static String _setting_path_root_dir();
-	static String _setting_path_use_imported_sidecars();
-	static String _setting_path_export_allowed_categories();
-	static String _setting_path_export_allowed_platform_tags();
-
-	AIImportOrchestrator *_get_orchestrator() const;
-	String _get_effective_root_dir() const;
-	String _get_effective_annotation_dir() const;
-	Error _ensure_dir_exists(const String &p_dir) const;
+	static AIExtensionAPI *singleton;
 
 protected:
 	static void _bind_methods();
 
 public:
-	static ModelCacheManager *get_singleton();
-	static void register_project_settings();
+	static AIExtensionAPI *get_singleton();
 
-	bool is_cache_enabled() const;
-	bool use_imported_sidecars() const;
+	bool has_runtime_server() const;
 	bool has_import_orchestrator() const;
-	PackedStringArray get_export_allowed_categories() const;
-	PackedStringArray get_export_allowed_platform_tags() const;
+	bool has_model_cache_manager() const;
+	bool is_ready() const;
 
-	String get_cache_root_dir() const;
-	String get_model_cache_dir() const;
-	String get_platform_artifact_cache_dir() const;
-	String get_embedding_cache_dir() const;
-	String get_annotation_sidecar_dir() const;
-	Error ensure_cache_layout() const;
-
-	String build_model_cache_key(const Ref<AIModelResource> &p_model) const;
-	String build_import_cache_key(const String &p_source_path, const String &p_importer_name, const Dictionary &p_context = Dictionary()) const;
-	String build_platform_artifact_key(const String &p_backend_name, const String &p_platform_tag, const Dictionary &p_options = Dictionary()) const;
-
-	Dictionary build_model_manifest(const Ref<AIModelResource> &p_model, const Dictionary &p_runtime_info = Dictionary()) const;
-	Error store_model_manifest(const Ref<AIModelResource> &p_model, const Dictionary &p_runtime_info = Dictionary());
-	Dictionary load_model_manifest(const String &p_model_cache_key) const;
-
-	String build_annotation_sidecar_path(const String &p_source_path, const String &p_importer_name, const Dictionary &p_context = Dictionary()) const;
-	bool has_annotation_sidecar(const String &p_source_path, const String &p_importer_name, const Dictionary &p_context = Dictionary()) const;
-	Error store_annotation_sidecar(const String &p_source_path, const String &p_importer_name, const Dictionary &p_sidecar, const Dictionary &p_context = Dictionary());
-	Dictionary load_annotation_sidecar(const String &p_source_path, const String &p_importer_name, const Dictionary &p_context = Dictionary()) const;
+	Dictionary get_runtime_stats() const;
+	Dictionary get_import_status() const;
+	Dictionary get_cache_status() const;
+	Dictionary get_extension_status() const;
+	Dictionary build_import_context(const String &p_source_path, const String &p_importer_name, const Dictionary &p_options = Dictionary()) const;
+	Dictionary orchestrate_import(const String &p_source_path, const String &p_importer_name, const Dictionary &p_options = Dictionary()) const;
 	Dictionary get_cached_annotation_status(const String &p_source_path, const String &p_importer_name, const Dictionary &p_context = Dictionary()) const;
 	Dictionary get_export_artifact_whitelist() const;
 	bool is_export_artifact_allowed(const String &p_category, const String &p_platform_tag = String(), const Dictionary &p_metadata = Dictionary()) const;
 	Dictionary build_export_bundle_plan(const String &p_platform_tag, const Array &p_requested_artifacts = Array(), const Dictionary &p_metadata = Dictionary()) const;
 
-	Dictionary get_manager_status() const;
-
-	ModelCacheManager();
-	~ModelCacheManager();
+	AIExtensionAPI();
+	~AIExtensionAPI();
 };

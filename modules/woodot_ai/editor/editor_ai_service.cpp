@@ -463,11 +463,11 @@ Ref<AITaskHandle> EditorAIService::request_scene_synthesis(const String &p_promp
 	request->set_prompt(p_prompt);
 	request->set_caller_tag("editor_scene_synthesis");
 
-	Dictionary metadata = collect_scene_request_context(p_context);
-	metadata["editor_service"] = "EditorAIService";
-	metadata["request_kind"] = "scene_synthesis";
-	metadata["output_format"] = "scene_plan_ir";
-	request->set_metadata(metadata);
+	Dictionary request_metadata = collect_scene_request_context(p_context);
+	request_metadata["editor_service"] = "EditorAIService";
+	request_metadata["request_kind"] = "scene_synthesis";
+	request_metadata["output_format"] = "scene_plan_ir";
+	request->set_metadata(request_metadata);
 
 	Ref<AITaskHandle> handle = _get_runtime_server()->submit_completion(request);
 	_record_task(REQUEST_KIND_SCENE_SYNTHESIS, handle);
@@ -498,12 +498,12 @@ Ref<AITaskHandle> EditorAIService::request_script_repair(const String &p_script_
 	}
 	request->set_prompt(prompt);
 
-	Dictionary metadata = collect_script_repair_context(p_script_path, p_diagnostics, p_code_snippet, p_context);
-	metadata["editor_service"] = "EditorAIService";
-	metadata["request_kind"] = "script_repair";
-	metadata["script_path"] = p_script_path;
-	metadata["output_format"] = "gdscript_patch";
-	request->set_metadata(metadata);
+	Dictionary request_metadata = collect_script_repair_context(p_script_path, p_diagnostics, p_code_snippet, p_context);
+	request_metadata["editor_service"] = "EditorAIService";
+	request_metadata["request_kind"] = "script_repair";
+	request_metadata["script_path"] = p_script_path;
+	request_metadata["output_format"] = "gdscript_patch";
+	request->set_metadata(request_metadata);
 
 	Ref<AITaskHandle> handle = _get_runtime_server()->submit_completion(request);
 	_record_task(REQUEST_KIND_SCRIPT_REPAIR, handle);

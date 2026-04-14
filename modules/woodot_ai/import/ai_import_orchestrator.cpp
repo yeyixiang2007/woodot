@@ -414,11 +414,11 @@ Ref<AICompletionRequest> AIImportOrchestrator::create_annotation_request(const S
 	request->set_prompt(p_prompt);
 	request->set_caller_tag("import_asset_annotation");
 
-	Dictionary metadata = build_import_context(p_source_path, p_importer_name, p_options);
-	metadata["request_kind"] = "import_annotation";
-	metadata["output_format"] = "import_annotation";
-	metadata["pass_type"] = _get_pass_name(PASS_ASSET_ANNOTATION);
-	request->set_metadata(metadata);
+	Dictionary request_metadata = build_import_context(p_source_path, p_importer_name, p_options);
+	request_metadata["request_kind"] = "import_annotation";
+	request_metadata["output_format"] = "import_annotation";
+	request_metadata["pass_type"] = _get_pass_name(PASS_ASSET_ANNOTATION);
+	request->set_metadata(request_metadata);
 	return request;
 }
 

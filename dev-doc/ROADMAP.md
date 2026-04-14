@@ -178,3 +178,17 @@
 ## 7. 结论
 
 当前项目已经从“想法阶段”进入“基础设施落地阶段”。接下来最重要的不是继续扩散目标面，而是把 build foundation 过渡到真实 runtime skeleton，并把线程协议、资源边界和编辑器落地策略先做稳。
+
+---
+
+## 8. 当前状态与交付计划
+
+为了把路线图进一步收敛成“当前已完成什么、下一步怎么落地”的执行视图，已补充专项文档：
+
+- [dev-doc/woodot-ai/06-current-status-and-delivery-plan.md](woodot-ai/06-current-status-and-delivery-plan.md)
+
+建议将该文档作为：
+
+- 迭代优先级讨论入口
+- 里程碑验收参考
+- 各模块任务拆解前的统一对齐材料

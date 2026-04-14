@@ -266,3 +266,20 @@ graph LR
   - `UndoRedoBridge` 已支持基于 hunk 的脚本 patch 应用
 - `ED-010`
   - 已补充 editor 侧非法 scene IR / patch IR 防御测试
+
+---
+
+## 14. 下一阶段重点
+
+当前 editor 侧已经具备“结构化输出 -> preview -> UndoRedo apply”的 MVP 闭环。
+
+下一阶段建议重点不是继续增加零散能力点，而是：
+
+1. 为 `EditorAIService` 提供最小可用 UI 入口
+2. 把 scene synthesis 与 script repair 变成真实可操作工具
+3. 扩展 `UndoRedoBridge` 的受控动作范围
+4. 维持“默认建议态、不直接自动应用”的安全边界
+
+完整完成度对比和阶段性落地步骤，参考：
+
+- `06-current-status-and-delivery-plan.md`

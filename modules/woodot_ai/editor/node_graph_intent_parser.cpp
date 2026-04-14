@@ -174,14 +174,14 @@ Ref<SceneSynthesisPlan> NodeGraphIntentParser::parse_scene_plan_ir(const String 
 	plan->set_resource_operations(validation["resource_operations"]);
 	plan->set_warnings(validation["warnings"]);
 
-	Dictionary metadata = validation["metadata"];
+	Dictionary plan_metadata = validation["metadata"];
 	const Array override_keys = p_metadata.keys();
 	for (int32_t i = 0; i < override_keys.size(); i++) {
-		metadata[override_keys[i]] = p_metadata[override_keys[i]];
+		plan_metadata[override_keys[i]] = p_metadata[override_keys[i]];
 	}
-	metadata["parser"] = "NodeGraphIntentParser";
-	metadata["format"] = "scene_plan_ir";
-	plan->set_metadata(metadata);
+	plan_metadata["parser"] = "NodeGraphIntentParser";
+	plan_metadata["format"] = "scene_plan_ir";
+	plan->set_metadata(plan_metadata);
 	return plan;
 }
 

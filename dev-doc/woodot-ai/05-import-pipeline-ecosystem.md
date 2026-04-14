@@ -241,6 +241,72 @@ sequenceDiagram
 
 ---
 
+## 10.2 `PIPE-007` 导出工件白名单
+
+当前导出白名单策略由 `ModelCacheManager` 承载：
+
+- 参考 `05-import-pipeline-ecosystem-export_whitelist.md`
+
+默认导出类别：
+
+- `platform_artifact`
+- `annotation_sidecar`
+
+策略目标：
+
+- 默认不把开发期缓存全量打进导出包
+- 只允许被白名单列出的缓存类别进入导出规划
+- 平台标签可以进一步收窄导出结果
+
+---
+
+## 10.3 `PIPE-008` 扩展接口
+
+当前稳定扩展入口为 `AIExtensionAPI`：
+
+- 参考 `05-import-pipeline-ecosystem-ai_extension_api.md`
+
+当前对插件和工具链统一暴露：
+
+- runtime stats
+- import orchestration
+- cached annotation 查询
+- export whitelist / bundle plan
+
+---
+
+## 10.4 `PIPE-009` 失败回退验证
+
+当前回退验证已覆盖以下关键分支：
+
+- orchestrator 总开关关闭
+- 所有 AI pass 关闭
+- runtime 不可用且 `fail_open = true`
+- runtime 不可用且 `fail_open = false`
+- `AIExtensionAPI` 在无 runtime 时仍可提供 whitelist / bundle plan 能力
+
+测试位置：
+
+- `modules/woodot_ai/tests/test_ai_runtime.h`
+
+---
+
+## 10.5 `PIPE-010` 导入性能压测
+
+当前已补充压测报告模板与执行协议：
+
+- 参考 `05-import-pipeline-ecosystem-import_perf_report.md`
+
+覆盖内容：
+
+- workload matrix
+- cold / warm cache 对比模式
+- fail-open 压测模式
+- 指标定义与验收门槛
+- 结果表模板
+
+---
+
 ## 11. 验收标准
 
 1. AI pass 默认关闭且不会影响基础导入
@@ -248,3 +314,25 @@ sequenceDiagram
 3. 缓存命中率和失效机制可观测
 4. 插件可以只依赖稳定 API 层
 5. 导出不会无控制地打入冗余 AI 工件
+
+---
+
+## 12. 下一阶段重点
+
+当前 import 侧已经具备：
+
+- orchestrator 骨架
+- asset annotation MVP
+- cache / whitelist / extension API
+- fallback 验证与性能报告模板
+
+下一阶段建议重点转向：
+
+1. 真实模型驱动下的 annotation 执行链
+2. cache 命中与 sidecar 写回的真实闭环
+3. mesh / texture pass 从设计稿推进到真实最小实现
+4. import 与 runtime / editor 的统一工作流衔接
+
+完整完成度对比和分阶段推进建议，参考：
+
+- `06-current-status-and-delivery-plan.md`

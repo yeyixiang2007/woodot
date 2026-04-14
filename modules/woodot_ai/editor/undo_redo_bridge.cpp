@@ -43,6 +43,13 @@
 
 UndoRedoBridge *UndoRedoBridge::singleton = nullptr;
 
+static Array _make_scene_plan_supported_operations() {
+	Array operations;
+	operations.push_back(String("create_node"));
+	operations.push_back(String("set_property"));
+	return operations;
+}
+
 void UndoRedoBridge::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("_attach_scene_node", "parent_path", "node"), &UndoRedoBridge::_attach_scene_node);
 	ClassDB::bind_method(D_METHOD("_detach_scene_node", "parent_path", "node"), &UndoRedoBridge::_detach_scene_node);
@@ -163,7 +170,7 @@ Dictionary UndoRedoBridge::can_apply_scene_plan(const Ref<SceneSynthesisPlan> &p
 	cleanup_temporary_nodes();
 
 	Dictionary status = _make_status(OK, "Scene plan can be applied through the MVP bridge.", true);
-	status["supported_operations"] = Array::make(String("create_node"), String("set_property"));
+	status["supported_operations"] = _make_scene_plan_supported_operations();
 	status["operation_count"] = operations.size();
 	return status;
 }
@@ -303,7 +310,7 @@ Dictionary UndoRedoBridge::get_bridge_status() const {
 	Dictionary status;
 	status["has_undo_redo_manager"] = EditorUndoRedoManager::get_singleton() != nullptr;
 	status["supports_scene_plan_apply"] = true;
-	status["scene_plan_supported_operations"] = Array::make(String("create_node"), String("set_property"));
+	status["scene_plan_supported_operations"] = _make_scene_plan_supported_operations();
 	status["supports_gdscript_patch_apply"] = true;
 	status["supports_hunk_patch_apply"] = true;
 	status["supports_full_file_replace_fallback"] = true;

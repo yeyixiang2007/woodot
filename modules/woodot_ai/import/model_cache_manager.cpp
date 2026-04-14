@@ -52,10 +52,20 @@ String ModelCacheManager::_setting_path_use_imported_sidecars() {
 	return "woodot_ai/cache/use_imported_sidecars";
 }
 
+String ModelCacheManager::_setting_path_export_allowed_categories() {
+	return "woodot_ai/export/allowed_artifact_categories";
+}
+
+String ModelCacheManager::_setting_path_export_allowed_platform_tags() {
+	return "woodot_ai/export/allowed_platform_tags";
+}
+
 void ModelCacheManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_cache_enabled"), &ModelCacheManager::is_cache_enabled);
 	ClassDB::bind_method(D_METHOD("use_imported_sidecars"), &ModelCacheManager::use_imported_sidecars);
 	ClassDB::bind_method(D_METHOD("has_import_orchestrator"), &ModelCacheManager::has_import_orchestrator);
+	ClassDB::bind_method(D_METHOD("get_export_allowed_categories"), &ModelCacheManager::get_export_allowed_categories);
+	ClassDB::bind_method(D_METHOD("get_export_allowed_platform_tags"), &ModelCacheManager::get_export_allowed_platform_tags);
 	ClassDB::bind_method(D_METHOD("get_cache_root_dir"), &ModelCacheManager::get_cache_root_dir);
 	ClassDB::bind_method(D_METHOD("get_model_cache_dir"), &ModelCacheManager::get_model_cache_dir);
 	ClassDB::bind_method(D_METHOD("get_platform_artifact_cache_dir"), &ModelCacheManager::get_platform_artifact_cache_dir);
@@ -73,6 +83,9 @@ void ModelCacheManager::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("store_annotation_sidecar", "source_path", "importer_name", "sidecar", "context"), &ModelCacheManager::store_annotation_sidecar, DEFVAL(Dictionary()));
 	ClassDB::bind_method(D_METHOD("load_annotation_sidecar", "source_path", "importer_name", "context"), &ModelCacheManager::load_annotation_sidecar, DEFVAL(Dictionary()));
 	ClassDB::bind_method(D_METHOD("get_cached_annotation_status", "source_path", "importer_name", "context"), &ModelCacheManager::get_cached_annotation_status, DEFVAL(Dictionary()));
+	ClassDB::bind_method(D_METHOD("get_export_artifact_whitelist"), &ModelCacheManager::get_export_artifact_whitelist);
+	ClassDB::bind_method(D_METHOD("is_export_artifact_allowed", "category", "platform_tag", "metadata"), &ModelCacheManager::is_export_artifact_allowed, DEFVAL(String()), DEFVAL(Dictionary()));
+	ClassDB::bind_method(D_METHOD("build_export_bundle_plan", "platform_tag", "requested_artifacts", "metadata"), &ModelCacheManager::build_export_bundle_plan, DEFVAL(Array()), DEFVAL(Dictionary()));
 	ClassDB::bind_method(D_METHOD("get_manager_status"), &ModelCacheManager::get_manager_status);
 }
 
@@ -84,6 +97,11 @@ void ModelCacheManager::register_project_settings() {
 	GLOBAL_DEF(PropertyInfo(Variant::BOOL, _setting_path_enabled()), true);
 	GLOBAL_DEF(PropertyInfo(Variant::STRING, _setting_path_root_dir()), "");
 	GLOBAL_DEF(PropertyInfo(Variant::BOOL, _setting_path_use_imported_sidecars()), true);
+	PackedStringArray default_categories;
+	default_categories.push_back("platform_artifact");
+	default_categories.push_back("annotation_sidecar");
+	GLOBAL_DEF(PropertyInfo(Variant::PACKED_STRING_ARRAY, _setting_path_export_allowed_categories()), default_categories);
+	GLOBAL_DEF(PropertyInfo(Variant::PACKED_STRING_ARRAY, _setting_path_export_allowed_platform_tags()), PackedStringArray());
 }
 
 bool ModelCacheManager::is_cache_enabled() const {
@@ -96,6 +114,14 @@ bool ModelCacheManager::use_imported_sidecars() const {
 
 bool ModelCacheManager::has_import_orchestrator() const {
 	return _get_orchestrator() != nullptr;
+}
+
+PackedStringArray ModelCacheManager::get_export_allowed_categories() const {
+	return PackedStringArray(GLOBAL_GET(_setting_path_export_allowed_categories()));
+}
+
+PackedStringArray ModelCacheManager::get_export_allowed_platform_tags() const {
+	return PackedStringArray(GLOBAL_GET(_setting_path_export_allowed_platform_tags()));
 }
 
 String ModelCacheManager::get_cache_root_dir() const {
@@ -137,7 +163,7 @@ Error ModelCacheManager::ensure_cache_layout() const {
 }
 
 String ModelCacheManager::build_model_cache_key(const Ref<AIModelResource> &p_model) const {
-	ERR_FAIL_COND_V(p_model.is_null(), String(), "ModelCacheManager requires a valid AIModelResource.");
+	ERR_FAIL_COND_V_MSG(p_model.is_null(), String(), "ModelCacheManager requires a valid AIModelResource.");
 
 	String serialized = String(p_model->get_backend_type()) + "|";
 	serialized += p_model->get_model_path() + "|";
@@ -281,6 +307,70 @@ Dictionary ModelCacheManager::get_cached_annotation_status(const String &p_sourc
 	return status;
 }
 
+Dictionary ModelCacheManager::get_export_artifact_whitelist() const {
+	Dictionary whitelist;
+	whitelist["allowed_categories"] = get_export_allowed_categories();
+	whitelist["allowed_platform_tags"] = get_export_allowed_platform_tags();
+	whitelist["cache_enabled"] = is_cache_enabled();
+	whitelist["use_imported_sidecars"] = use_imported_sidecars();
+	return whitelist;
+}
+
+bool ModelCacheManager::is_export_artifact_allowed(const String &p_category, const String &p_platform_tag, const Dictionary &p_metadata) const {
+	const PackedStringArray allowed_categories = get_export_allowed_categories();
+	if (!allowed_categories.has(p_category)) {
+		return false;
+	}
+
+	const PackedStringArray allowed_platform_tags = get_export_allowed_platform_tags();
+	if (!p_platform_tag.is_empty() && !allowed_platform_tags.is_empty() && !allowed_platform_tags.has(p_platform_tag)) {
+		return false;
+	}
+
+	if (p_metadata.has("required") && !bool(p_metadata["required"]) && p_category == "platform_artifact" && !allowed_categories.has("optional_platform_artifact")) {
+		return false;
+	}
+
+	return true;
+}
+
+Dictionary ModelCacheManager::build_export_bundle_plan(const String &p_platform_tag, const Array &p_requested_artifacts, const Dictionary &p_metadata) const {
+	Dictionary plan;
+	Array allowed_artifacts;
+	Array rejected_artifacts;
+	Array warnings;
+
+	for (int32_t i = 0; i < p_requested_artifacts.size(); i++) {
+		if (p_requested_artifacts[i].get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+
+		Dictionary artifact = p_requested_artifacts[i];
+		const String category = artifact.has("category") ? String(artifact["category"]) : String();
+		const String artifact_platform = artifact.has("platform_tag") ? String(artifact["platform_tag"]) : p_platform_tag;
+		const Dictionary artifact_metadata = artifact.has("metadata") && artifact["metadata"].get_type() == Variant::DICTIONARY ? Dictionary(artifact["metadata"]) : Dictionary();
+
+		if (is_export_artifact_allowed(category, artifact_platform, artifact_metadata)) {
+			allowed_artifacts.push_back(artifact);
+		} else {
+			rejected_artifacts.push_back(artifact);
+		}
+	}
+
+	if (rejected_artifacts.size() > 0) {
+		warnings.push_back("Some requested artifacts were excluded by the export whitelist.");
+	}
+
+	plan["schema"] = "woodot_ai.export_bundle_plan.v1";
+	plan["platform_tag"] = p_platform_tag;
+	plan["whitelist"] = get_export_artifact_whitelist();
+	plan["allowed_artifacts"] = allowed_artifacts;
+	plan["rejected_artifacts"] = rejected_artifacts;
+	plan["warnings"] = warnings;
+	plan["metadata"] = p_metadata;
+	return plan;
+}
+
 Dictionary ModelCacheManager::get_manager_status() const {
 	Dictionary status;
 	status["cache_enabled"] = is_cache_enabled();
@@ -291,6 +381,7 @@ Dictionary ModelCacheManager::get_manager_status() const {
 	status["platform_artifact_cache_dir"] = get_platform_artifact_cache_dir();
 	status["embedding_cache_dir"] = get_embedding_cache_dir();
 	status["annotation_sidecar_dir"] = get_annotation_sidecar_dir();
+	status["export_whitelist"] = get_export_artifact_whitelist();
 	status["stored_sidecars"] = static_cast<int64_t>(stored_sidecars);
 	status["loaded_sidecars"] = static_cast<int64_t>(loaded_sidecars);
 	status["stored_model_manifests"] = static_cast<int64_t>(stored_model_manifests);

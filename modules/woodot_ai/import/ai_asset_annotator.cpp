@@ -115,10 +115,10 @@ Ref<AICompletionRequest> AIAssetAnnotator::prepare_annotation_request(const Stri
 	const String prompt = build_annotation_prompt(p_source_path, p_importer_name, p_options);
 	Ref<AICompletionRequest> request = orchestrator->create_annotation_request(p_source_path, p_importer_name, prompt, RID(), p_options);
 	if (request.is_valid()) {
-		Dictionary metadata = request->get_metadata();
-		metadata["annotator"] = "AIAssetAnnotator";
-		metadata["annotation_schema"] = "woodot_ai.asset_annotation.v1";
-		request->set_metadata(metadata);
+		Dictionary request_metadata = request->get_metadata();
+		request_metadata["annotator"] = "AIAssetAnnotator";
+		request_metadata["annotation_schema"] = "woodot_ai.asset_annotation.v1";
+		request->set_metadata(request_metadata);
 	}
 	return request;
 }

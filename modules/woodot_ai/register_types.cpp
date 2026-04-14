@@ -34,6 +34,7 @@
 #include "core/config/project_settings.h"
 #include "core/object/class_db.h"
 #include "modules/woodot_ai/import/ai_asset_annotator.h"
+#include "modules/woodot_ai/import/ai_extension_api.h"
 #include "modules/woodot_ai/import/ai_import_orchestrator.h"
 #include "modules/woodot_ai/import/ai_mesh_post_processor.h"
 #include "modules/woodot_ai/import/ai_texture_enhancer.h"
@@ -69,6 +70,7 @@ static AIAssetAnnotator *woodot_ai_asset_annotator = nullptr;
 static AIMeshPostProcessor *woodot_ai_mesh_post_processor = nullptr;
 static AITextureEnhancer *woodot_ai_texture_enhancer = nullptr;
 static ModelCacheManager *woodot_ai_model_cache_manager = nullptr;
+static AIExtensionAPI *woodot_ai_extension_api = nullptr;
 static AIImportOrchestrator *woodot_ai_import_orchestrator = nullptr;
 static NodeGraphIntentParser *woodot_ai_node_graph_intent_parser = nullptr;
 static UndoRedoBridge *woodot_ai_undo_redo_bridge = nullptr;
@@ -106,6 +108,7 @@ void initialize_woodot_ai_module(ModuleInitializationLevel p_level) {
 			GDREGISTER_CLASS(AIMeshPostProcessor);
 			GDREGISTER_CLASS(AITextureEnhancer);
 			GDREGISTER_CLASS(ModelCacheManager);
+			GDREGISTER_CLASS(AIExtensionAPI);
 			GDREGISTER_CLASS(AIImportOrchestrator);
 			GDREGISTER_CLASS(NodeGraphIntentParser);
 			GDREGISTER_CLASS(UndoRedoBridge);
@@ -149,6 +152,12 @@ void initialize_woodot_ai_module(ModuleInitializationLevel p_level) {
 			woodot_ai_model_cache_manager = memnew(ModelCacheManager);
 			{
 				Engine::Singleton singleton("ModelCacheManager", woodot_ai_model_cache_manager, "ModelCacheManager");
+				singleton.editor_only = true;
+				Engine::get_singleton()->add_singleton(singleton);
+			}
+			woodot_ai_extension_api = memnew(AIExtensionAPI);
+			{
+				Engine::Singleton singleton("AIExtensionAPI", woodot_ai_extension_api, "AIExtensionAPI");
 				singleton.editor_only = true;
 				Engine::get_singleton()->add_singleton(singleton);
 			}
@@ -260,6 +269,13 @@ void uninitialize_woodot_ai_module(ModuleInitializationLevel p_level) {
 				}
 				memdelete(woodot_ai_model_cache_manager);
 				woodot_ai_model_cache_manager = nullptr;
+			}
+			if (woodot_ai_extension_api != nullptr) {
+				if (Engine::get_singleton()->has_singleton("AIExtensionAPI")) {
+					Engine::get_singleton()->remove_singleton("AIExtensionAPI");
+				}
+				memdelete(woodot_ai_extension_api);
+				woodot_ai_extension_api = nullptr;
 			}
 			if (woodot_ai_node_graph_intent_parser != nullptr) {
 				if (Engine::get_singleton()->has_singleton("NodeGraphIntentParser")) {

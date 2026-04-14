@@ -170,14 +170,14 @@ Ref<GDScriptRepairPatch> GDScriptRepairEngine::parse_patch_ir(const String &p_so
 	patch->set_hunks(validation["hunks"]);
 	patch->set_warnings(validation["warnings"]);
 
-	Dictionary metadata = validation["metadata"];
+	Dictionary patch_metadata = validation["metadata"];
 	const Array override_keys = p_metadata.keys();
 	for (int32_t i = 0; i < override_keys.size(); i++) {
-		metadata[override_keys[i]] = p_metadata[override_keys[i]];
+		patch_metadata[override_keys[i]] = p_metadata[override_keys[i]];
 	}
-	metadata["engine"] = "GDScriptRepairEngine";
-	metadata["format"] = "gdscript_patch";
-	patch->set_metadata(metadata);
+	patch_metadata["engine"] = "GDScriptRepairEngine";
+	patch_metadata["format"] = "gdscript_patch";
+	patch->set_metadata(patch_metadata);
 	return patch;
 }
 

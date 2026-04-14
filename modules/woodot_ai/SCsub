@@ -66,9 +66,11 @@ def _add_llama_common_sources(p_env, p_obj, p_root):
         ggml_root + "/ggml.c",
         ggml_root + "/ggml-alloc.c",
         ggml_root + "/ggml-backend.cpp",
+        ggml_root + "/ggml-backend-dl.cpp",
         ggml_root + "/ggml-backend-meta.cpp",
         ggml_root + "/ggml-backend-reg.cpp",
         ggml_root + "/ggml-opt.cpp",
+        ggml_root + "/ggml-quants.c",
         ggml_root + "/ggml-threading.cpp",
         ggml_root + "/gguf.cpp",
     ]
