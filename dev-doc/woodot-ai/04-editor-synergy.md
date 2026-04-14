@@ -230,6 +230,10 @@ graph LR
 
 ---
 
+`ED-002` 说明文档：`dev-doc/woodot-ai/04-editor-synergy-editor_context_collector.md`
+
+---
+
 ## 12. 验收标准
 
 1. 所有 AI 改动都可预览

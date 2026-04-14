@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  editor_ai_service.h                                                   */
+/*  editor_context_collector.h                                            */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -31,64 +31,40 @@
 #pragma once
 
 #include "core/object/object.h"
-#include "modules/woodot_ai/runtime/ai_task_handle.h"
-#include "core/variant/type_info.h"
 
-class AIModelResource;
-class EditorContextCollector;
-class AIRuntimeServer;
+class Node;
 
-class EditorAIService : public Object {
-	GDCLASS(EditorAIService, Object);
+class EditorContextCollector : public Object {
+	GDCLASS(EditorContextCollector, Object);
 
-public:
-	enum RequestKind {
-		REQUEST_KIND_SCENE_SYNTHESIS = 0,
-		REQUEST_KIND_SCRIPT_REPAIR,
-	};
+	static constexpr int32_t SCENE_NODE_BUDGET = 64;
+	static constexpr int32_t SCENE_DEPTH_BUDGET = 4;
+	static constexpr int32_t SELECTION_BUDGET = 16;
+	static constexpr int32_t TEXT_PREVIEW_BUDGET = 2000;
 
-private:
-	static EditorAIService *singleton;
+	static EditorContextCollector *singleton;
 
-	Ref<AIModelResource> default_model;
-	RID default_model_rid;
-	Ref<AITaskHandle> last_scene_synthesis_task;
-	Ref<AITaskHandle> last_script_repair_task;
-	uint64_t submitted_scene_requests = 0;
-	uint64_t submitted_script_repairs = 0;
-
-	void _record_task(RequestKind p_kind, const Ref<AITaskHandle> &p_task_handle);
-	AIRuntimeServer *_get_runtime_server() const;
-	Ref<AITaskHandle> _fail_task(const String &p_message) const;
+	Dictionary _build_scene_context() const;
+	Dictionary _build_script_context(const String &p_script_path, const String &p_diagnostics, const String &p_code_snippet) const;
+	Dictionary _build_project_context() const;
+	Dictionary _build_budget_info() const;
+	Dictionary _snapshot_node(Node *p_node, int32_t p_depth, int32_t &r_remaining_budget) const;
+	Array _snapshot_selection() const;
+	String _load_script_snippet(const String &p_script_path) const;
+	String _truncate_text(const String &p_text, int32_t p_limit) const;
+	Dictionary _merge_context(const Dictionary &p_base, const Dictionary &p_overrides) const;
 
 protected:
 	static void _bind_methods();
 
 public:
-	static EditorAIService *get_singleton();
+	static EditorContextCollector *get_singleton();
 
-	void set_default_model(const Ref<AIModelResource> &p_model);
-	Ref<AIModelResource> get_default_model() const;
-	bool has_runtime_server() const;
-	bool is_ready() const;
-	bool has_context_collector() const;
-	bool has_loaded_default_model() const;
-	Error ensure_default_model_loaded();
-	void unload_default_model();
-
-	Ref<AITaskHandle> request_scene_synthesis(const String &p_prompt, const Dictionary &p_context = Dictionary());
-	Ref<AITaskHandle> request_script_repair(const String &p_script_path, const String &p_diagnostics, const String &p_code_snippet = String(), const Dictionary &p_context = Dictionary());
-	void cancel_task(const Ref<AITaskHandle> &p_task_handle);
-	void poll();
-
-	Ref<AITaskHandle> get_last_scene_synthesis_task() const;
-	Ref<AITaskHandle> get_last_script_repair_task() const;
+	bool has_editor_interface() const;
 	Dictionary collect_scene_request_context(const Dictionary &p_overrides = Dictionary()) const;
 	Dictionary collect_script_repair_context(const String &p_script_path, const String &p_diagnostics, const String &p_code_snippet = String(), const Dictionary &p_overrides = Dictionary()) const;
-	Dictionary get_service_status() const;
+	Dictionary get_collector_status() const;
 
-	EditorAIService();
-	~EditorAIService();
+	EditorContextCollector();
+	~EditorContextCollector();
 };
-
-VARIANT_ENUM_CAST(EditorAIService::RequestKind);

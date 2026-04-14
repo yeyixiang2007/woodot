@@ -42,6 +42,7 @@
 #include "modules/woodot_ai/runtime/ai_runtime_server.h"
 
 #ifdef TOOLS_ENABLED
+#include "modules/woodot_ai/editor/editor_context_collector.h"
 #include "modules/woodot_ai/editor/editor_ai_service.h"
 #endif
 
@@ -51,6 +52,7 @@
 
 static AIRuntimeServer *woodot_ai_runtime_server = nullptr;
 #ifdef TOOLS_ENABLED
+static EditorContextCollector *woodot_ai_editor_context_collector = nullptr;
 static EditorAIService *woodot_ai_editor_service = nullptr;
 #endif
 
@@ -76,7 +78,14 @@ void initialize_woodot_ai_module(ModuleInitializationLevel p_level) {
 			break;
 		case MODULE_INITIALIZATION_LEVEL_EDITOR:
 #ifdef TOOLS_ENABLED
+			GDREGISTER_CLASS(EditorContextCollector);
 			GDREGISTER_CLASS(EditorAIService);
+			woodot_ai_editor_context_collector = memnew(EditorContextCollector);
+			{
+				Engine::Singleton singleton("EditorContextCollector", woodot_ai_editor_context_collector, "EditorContextCollector");
+				singleton.editor_only = true;
+				Engine::get_singleton()->add_singleton(singleton);
+			}
 			woodot_ai_editor_service = memnew(EditorAIService);
 			{
 				Engine::Singleton singleton("EditorAIService", woodot_ai_editor_service, "EditorAIService");
@@ -111,6 +120,13 @@ void uninitialize_woodot_ai_module(ModuleInitializationLevel p_level) {
 				}
 				memdelete(woodot_ai_editor_service);
 				woodot_ai_editor_service = nullptr;
+			}
+			if (woodot_ai_editor_context_collector != nullptr) {
+				if (Engine::get_singleton()->has_singleton("EditorContextCollector")) {
+					Engine::get_singleton()->remove_singleton("EditorContextCollector");
+				}
+				memdelete(woodot_ai_editor_context_collector);
+				woodot_ai_editor_context_collector = nullptr;
 			}
 #endif
 			break;

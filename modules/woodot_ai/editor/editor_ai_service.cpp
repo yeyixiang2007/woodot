@@ -31,6 +31,7 @@
 #include "modules/woodot_ai/editor/editor_ai_service.h"
 
 #include "core/object/class_db.h"
+#include "modules/woodot_ai/editor/editor_context_collector.h"
 #include "modules/woodot_ai/resources/ai_model_resource.h"
 #include "modules/woodot_ai/runtime/ai_requests.h"
 #include "modules/woodot_ai/runtime/ai_runtime_server.h"
@@ -42,9 +43,12 @@ void EditorAIService::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_default_model"), &EditorAIService::get_default_model);
 	ClassDB::bind_method(D_METHOD("has_runtime_server"), &EditorAIService::has_runtime_server);
 	ClassDB::bind_method(D_METHOD("is_ready"), &EditorAIService::is_ready);
+	ClassDB::bind_method(D_METHOD("has_context_collector"), &EditorAIService::has_context_collector);
 	ClassDB::bind_method(D_METHOD("has_loaded_default_model"), &EditorAIService::has_loaded_default_model);
 	ClassDB::bind_method(D_METHOD("ensure_default_model_loaded"), &EditorAIService::ensure_default_model_loaded);
 	ClassDB::bind_method(D_METHOD("unload_default_model"), &EditorAIService::unload_default_model);
+	ClassDB::bind_method(D_METHOD("collect_scene_request_context", "overrides"), &EditorAIService::collect_scene_request_context, DEFVAL(Dictionary()));
+	ClassDB::bind_method(D_METHOD("collect_script_repair_context", "script_path", "diagnostics", "code_snippet", "overrides"), &EditorAIService::collect_script_repair_context, DEFVAL(String()), DEFVAL(Dictionary()));
 	ClassDB::bind_method(D_METHOD("request_scene_synthesis", "prompt", "context"), &EditorAIService::request_scene_synthesis, DEFVAL(Dictionary()));
 	ClassDB::bind_method(D_METHOD("request_script_repair", "script_path", "diagnostics", "code_snippet", "context"), &EditorAIService::request_script_repair, DEFVAL(String()), DEFVAL(Dictionary()));
 	ClassDB::bind_method(D_METHOD("cancel_task", "task_handle"), &EditorAIService::cancel_task);
@@ -96,6 +100,10 @@ bool EditorAIService::is_ready() const {
 	return has_runtime_server() && default_model.is_valid();
 }
 
+bool EditorAIService::has_context_collector() const {
+	return EditorContextCollector::get_singleton() != nullptr;
+}
+
 bool EditorAIService::has_loaded_default_model() const {
 	AIRuntimeServer *runtime_server = _get_runtime_server();
 	if (runtime_server == nullptr || !default_model_rid.is_valid()) {
@@ -134,6 +142,26 @@ void EditorAIService::unload_default_model() {
 	default_model_rid = RID();
 }
 
+Dictionary EditorAIService::collect_scene_request_context(const Dictionary &p_overrides) const {
+	if (!has_context_collector()) {
+		return p_overrides;
+	}
+
+	return EditorContextCollector::get_singleton()->collect_scene_request_context(p_overrides);
+}
+
+Dictionary EditorAIService::collect_script_repair_context(const String &p_script_path, const String &p_diagnostics, const String &p_code_snippet, const Dictionary &p_overrides) const {
+	if (!has_context_collector()) {
+		Dictionary fallback = p_overrides;
+		fallback["script_path"] = p_script_path;
+		fallback["diagnostics"] = p_diagnostics;
+		fallback["code_snippet"] = p_code_snippet;
+		return fallback;
+	}
+
+	return EditorContextCollector::get_singleton()->collect_script_repair_context(p_script_path, p_diagnostics, p_code_snippet, p_overrides);
+}
+
 Ref<AITaskHandle> EditorAIService::request_scene_synthesis(const String &p_prompt, const Dictionary &p_context) {
 	if (p_prompt.is_empty()) {
 		emit_signal(SNAME("request_failed"), REQUEST_KIND_SCENE_SYNTHESIS, "Scene synthesis prompt must not be empty.");
@@ -153,7 +181,7 @@ Ref<AITaskHandle> EditorAIService::request_scene_synthesis(const String &p_promp
 	request->set_prompt(p_prompt);
 	request->set_caller_tag("editor_scene_synthesis");
 
-	Dictionary metadata = p_context;
+	Dictionary metadata = collect_scene_request_context(p_context);
 	metadata["editor_service"] = "EditorAIService";
 	metadata["request_kind"] = "scene_synthesis";
 	metadata["output_format"] = "scene_plan_ir";
@@ -188,7 +216,7 @@ Ref<AITaskHandle> EditorAIService::request_script_repair(const String &p_script_
 	}
 	request->set_prompt(prompt);
 
-	Dictionary metadata = p_context;
+	Dictionary metadata = collect_script_repair_context(p_script_path, p_diagnostics, p_code_snippet, p_context);
 	metadata["editor_service"] = "EditorAIService";
 	metadata["request_kind"] = "script_repair";
 	metadata["script_path"] = p_script_path;
@@ -228,11 +256,13 @@ Dictionary EditorAIService::get_service_status() const {
 	Dictionary status;
 	status["ready"] = is_ready();
 	status["has_runtime_server"] = has_runtime_server();
+	status["has_context_collector"] = has_context_collector();
 	status["has_default_model"] = default_model.is_valid();
 	status["has_loaded_default_model"] = has_loaded_default_model();
 	status["default_model_rid"] = default_model_rid;
 	status["submitted_scene_requests"] = static_cast<int64_t>(submitted_scene_requests);
 	status["submitted_script_repairs"] = static_cast<int64_t>(submitted_script_repairs);
+	status["collector_status"] = has_context_collector() ? EditorContextCollector::get_singleton()->get_collector_status() : Dictionary();
 	status["runtime_stats"] = has_runtime_server() ? _get_runtime_server()->get_runtime_stats() : Dictionary();
 	return status;
 }
