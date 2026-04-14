@@ -150,6 +150,10 @@ sequenceDiagram
 - 调度导入期推理任务
 - 聚合标注、增强、缓存写回
 
+实现说明：
+
+- 参考 `05-import-pipeline-ecosystem-ai_import_orchestrator.md`
+
 ### 9.2 `AIAssetAnnotator`
 
 职责：

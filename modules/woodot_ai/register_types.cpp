@@ -46,6 +46,7 @@
 #include "modules/woodot_ai/editor/editor_context_collector.h"
 #include "modules/woodot_ai/editor/editor_ai_service.h"
 #include "modules/woodot_ai/editor/gdscript_repair_engine.h"
+#include "modules/woodot_ai/import/ai_import_orchestrator.h"
 #include "modules/woodot_ai/editor/node_graph_intent_parser.h"
 #include "modules/woodot_ai/editor/undo_redo_bridge.h"
 #endif
@@ -59,6 +60,7 @@ static AIRuntimeServer *woodot_ai_runtime_server = nullptr;
 static EditorAIPreviewDiff *woodot_ai_preview_diff = nullptr;
 static EditorContextCollector *woodot_ai_editor_context_collector = nullptr;
 static GDScriptRepairEngine *woodot_ai_gdscript_repair_engine = nullptr;
+static AIImportOrchestrator *woodot_ai_import_orchestrator = nullptr;
 static NodeGraphIntentParser *woodot_ai_node_graph_intent_parser = nullptr;
 static UndoRedoBridge *woodot_ai_undo_redo_bridge = nullptr;
 static EditorAIService *woodot_ai_editor_service = nullptr;
@@ -89,6 +91,7 @@ void initialize_woodot_ai_module(ModuleInitializationLevel p_level) {
 			GDREGISTER_CLASS(EditorAIPreviewDiff);
 			GDREGISTER_CLASS(EditorContextCollector);
 			GDREGISTER_CLASS(GDScriptRepairEngine);
+			GDREGISTER_CLASS(AIImportOrchestrator);
 			GDREGISTER_CLASS(NodeGraphIntentParser);
 			GDREGISTER_CLASS(UndoRedoBridge);
 			GDREGISTER_CLASS(EditorAIService);
@@ -107,6 +110,12 @@ void initialize_woodot_ai_module(ModuleInitializationLevel p_level) {
 			woodot_ai_gdscript_repair_engine = memnew(GDScriptRepairEngine);
 			{
 				Engine::Singleton singleton("GDScriptRepairEngine", woodot_ai_gdscript_repair_engine, "GDScriptRepairEngine");
+				singleton.editor_only = true;
+				Engine::get_singleton()->add_singleton(singleton);
+			}
+			woodot_ai_import_orchestrator = memnew(AIImportOrchestrator);
+			{
+				Engine::Singleton singleton("AIImportOrchestrator", woodot_ai_import_orchestrator, "AIImportOrchestrator");
 				singleton.editor_only = true;
 				Engine::get_singleton()->add_singleton(singleton);
 			}
@@ -177,6 +186,13 @@ void uninitialize_woodot_ai_module(ModuleInitializationLevel p_level) {
 				}
 				memdelete(woodot_ai_gdscript_repair_engine);
 				woodot_ai_gdscript_repair_engine = nullptr;
+			}
+			if (woodot_ai_import_orchestrator != nullptr) {
+				if (Engine::get_singleton()->has_singleton("AIImportOrchestrator")) {
+					Engine::get_singleton()->remove_singleton("AIImportOrchestrator");
+				}
+				memdelete(woodot_ai_import_orchestrator);
+				woodot_ai_import_orchestrator = nullptr;
 			}
 			if (woodot_ai_node_graph_intent_parser != nullptr) {
 				if (Engine::get_singleton()->has_singleton("NodeGraphIntentParser")) {
