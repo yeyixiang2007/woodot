@@ -38,6 +38,7 @@
 #include "core/templates/hash_map.h"
 #include "core/templates/rid_owner.h"
 #include "modules/woodot_ai/runtime/ai_token_stream.h"
+#include "modules/woodot_ai/resources/ai_model_resource.h"
 
 #include <llama.h>
 
@@ -90,6 +91,86 @@ void _release_llama_api() {
 		llama_backend_free();
 	}
 }
+
+uint32_t _coerce_u32_option(const Dictionary &p_options, const StringName &p_key, uint32_t p_default_value, uint32_t p_min_value = 0) {
+	if (!p_options.has(p_key)) {
+		return p_default_value;
+	}
+
+	const Variant value = p_options[p_key];
+	if (value.get_type() != Variant::INT && value.get_type() != Variant::FLOAT && value.get_type() != Variant::BOOL) {
+		return p_default_value;
+	}
+
+	const int64_t numeric = int64_t(value);
+	return static_cast<uint32_t>(MAX(numeric, int64_t(p_min_value)));
+}
+
+int32_t _coerce_i32_option(const Dictionary &p_options, const StringName &p_key, int32_t p_default_value, int32_t p_min_value = 0) {
+	if (!p_options.has(p_key)) {
+		return p_default_value;
+	}
+
+	const Variant value = p_options[p_key];
+	if (value.get_type() != Variant::INT && value.get_type() != Variant::FLOAT && value.get_type() != Variant::BOOL) {
+		return p_default_value;
+	}
+
+	return MAX(static_cast<int32_t>(int64_t(value)), p_min_value);
+}
+
+float _coerce_float_option(const Dictionary &p_options, const StringName &p_key, float p_default_value) {
+	if (!p_options.has(p_key)) {
+		return p_default_value;
+	}
+
+	const Variant value = p_options[p_key];
+	if (value.get_type() != Variant::INT && value.get_type() != Variant::FLOAT && value.get_type() != Variant::BOOL) {
+		return p_default_value;
+	}
+
+	return float(value);
+}
+
+bool _coerce_bool_option(const Dictionary &p_options, const StringName &p_key, bool p_default_value) {
+	if (!p_options.has(p_key)) {
+		return p_default_value;
+	}
+
+	return static_cast<bool>(p_options[p_key]);
+}
+
+llama_flash_attn_type _coerce_flash_attn_type_option(const Dictionary &p_options, const StringName &p_key, llama_flash_attn_type p_default_value) {
+	if (!p_options.has(p_key)) {
+		return p_default_value;
+	}
+
+	const Variant value = p_options[p_key];
+	if (value.get_type() == Variant::BOOL) {
+		return static_cast<bool>(value) ? LLAMA_FLASH_ATTN_TYPE_ENABLED : LLAMA_FLASH_ATTN_TYPE_DISABLED;
+	}
+	if (value.get_type() == Variant::INT || value.get_type() == Variant::FLOAT) {
+		const int64_t numeric = int64_t(value);
+		if (numeric == LLAMA_FLASH_ATTN_TYPE_DISABLED || numeric == LLAMA_FLASH_ATTN_TYPE_ENABLED || numeric == LLAMA_FLASH_ATTN_TYPE_AUTO) {
+			return static_cast<llama_flash_attn_type>(numeric);
+		}
+		return p_default_value;
+	}
+	if (value.get_type() == Variant::STRING || value.get_type() == Variant::STRING_NAME) {
+		const String normalized = String(value).strip_edges().to_lower();
+		if (normalized == "auto") {
+			return LLAMA_FLASH_ATTN_TYPE_AUTO;
+		}
+		if (normalized == "enabled" || normalized == "enable" || normalized == "on" || normalized == "true") {
+			return LLAMA_FLASH_ATTN_TYPE_ENABLED;
+		}
+		if (normalized == "disabled" || normalized == "disable" || normalized == "off" || normalized == "false") {
+			return LLAMA_FLASH_ATTN_TYPE_DISABLED;
+		}
+	}
+
+	return p_default_value;
+}
 } // namespace
 
 struct LlamaBackend::Data {
@@ -98,6 +179,8 @@ struct LlamaBackend::Data {
 		uint32_t active_contexts = 0;
 		bool unloading = false;
 		String source_path;
+		Dictionary context_metadata;
+		llama_context_params context_params = llama_context_default_params();
 		llama_model *native_model = nullptr;
 	};
 
@@ -105,7 +188,9 @@ struct LlamaBackend::Data {
 		RID model_rid;
 		uint64_t create_sequence = 0;
 		bool busy = false;
+		bool destroy_requested = false;
 		bool cancel_requested = false;
+		llama_context *native_context = nullptr;
 	};
 
 	mutable Mutex mutex;
@@ -115,6 +200,7 @@ struct LlamaBackend::Data {
 
 	uint64_t load_counter = 0;
 	uint64_t context_counter = 0;
+	uint64_t context_destroy_counter = 0;
 	uint64_t rejected_job_count = 0;
 	uint64_t cancel_request_count = 0;
 	uint64_t streamed_job_count = 0;
@@ -128,6 +214,36 @@ LlamaBackend::LlamaBackend() {
 }
 
 LlamaBackend::~LlamaBackend() {
+	{
+		MutexLock lock(data->mutex);
+
+		const LocalVector<RID> context_rids = data->context_owner.get_owned_list();
+		for (uint32_t i = 0; i < context_rids.size(); i++) {
+			Data::ContextState *context = data->context_owner.get_or_null(context_rids[i]);
+			if (context == nullptr) {
+				continue;
+			}
+			if (context->native_context != nullptr) {
+				llama_free(context->native_context);
+				context->native_context = nullptr;
+			}
+			data->context_owner.free(context_rids[i]);
+		}
+
+		const LocalVector<RID> model_rids = data->model_owner.get_owned_list();
+		for (uint32_t i = 0; i < model_rids.size(); i++) {
+			Data::ModelState *model = data->model_owner.get_or_null(model_rids[i]);
+			if (model == nullptr) {
+				continue;
+			}
+			if (model->native_model != nullptr) {
+				llama_model_free(model->native_model);
+				model->native_model = nullptr;
+			}
+			data->model_owner.free(model_rids[i]);
+		}
+	}
+
 	memdelete(data);
 	data = nullptr;
 	_release_llama_api();
@@ -237,6 +353,48 @@ AIBackendModelLoadResult LlamaBackend::load_model(const Ref<AIModelResource> &p_
 	}
 	model_state.source_path = resolved_model_path;
 	model_state.native_model = native_model;
+	model_state.context_params = llama_context_default_params();
+
+	const int32_t n_threads = p_model->get_n_threads() > 0 ? p_model->get_n_threads() : model_state.context_params.n_threads;
+	const Dictionary extra_options = p_model->get_extra_options();
+	model_state.context_params.n_ctx = MAX(0, p_model->get_context_size());
+	model_state.context_params.n_threads = n_threads;
+	model_state.context_params.n_threads_batch = _coerce_i32_option(extra_options, StringName("n_threads_batch"), n_threads, 1);
+	model_state.context_params.n_batch = _coerce_u32_option(extra_options, StringName("n_batch"), model_state.context_params.n_batch, 1);
+	model_state.context_params.n_ubatch = _coerce_u32_option(extra_options, StringName("n_ubatch"), MIN(model_state.context_params.n_batch, model_state.context_params.n_ubatch), 1);
+	model_state.context_params.n_ubatch = MIN(model_state.context_params.n_batch, model_state.context_params.n_ubatch);
+	model_state.context_params.n_seq_max = _coerce_u32_option(extra_options, StringName("n_seq_max"), model_state.context_params.n_seq_max, 1);
+	model_state.context_params.flash_attn_type = _coerce_flash_attn_type_option(extra_options, StringName("flash_attn"), model_state.context_params.flash_attn_type);
+	model_state.context_params.embeddings = _coerce_bool_option(extra_options, StringName("embeddings"), model_state.context_params.embeddings);
+	model_state.context_params.offload_kqv = _coerce_bool_option(extra_options, StringName("offload_kqv"), model_state.context_params.offload_kqv);
+	model_state.context_params.no_perf = _coerce_bool_option(extra_options, StringName("no_perf"), model_state.context_params.no_perf);
+	model_state.context_params.op_offload = _coerce_bool_option(extra_options, StringName("op_offload"), model_state.context_params.op_offload);
+	model_state.context_params.swa_full = _coerce_bool_option(extra_options, StringName("swa_full"), model_state.context_params.swa_full);
+	model_state.context_params.kv_unified = _coerce_bool_option(extra_options, StringName("kv_unified"), model_state.context_params.kv_unified);
+	if (p_model->get_rope_scaling() > 0.0f && p_model->get_rope_scaling() != 1.0f) {
+		model_state.context_params.rope_scaling_type = LLAMA_ROPE_SCALING_TYPE_LINEAR;
+		model_state.context_params.rope_freq_scale = 1.0f / p_model->get_rope_scaling();
+	}
+	model_state.context_params.yarn_orig_ctx = _coerce_u32_option(extra_options, StringName("yarn_orig_ctx"), model_state.context_params.yarn_orig_ctx);
+	model_state.context_params.yarn_ext_factor = _coerce_float_option(extra_options, StringName("yarn_ext_factor"), model_state.context_params.yarn_ext_factor);
+	model_state.context_params.yarn_attn_factor = _coerce_float_option(extra_options, StringName("yarn_attn_factor"), model_state.context_params.yarn_attn_factor);
+	model_state.context_params.yarn_beta_fast = _coerce_float_option(extra_options, StringName("yarn_beta_fast"), model_state.context_params.yarn_beta_fast);
+	model_state.context_params.yarn_beta_slow = _coerce_float_option(extra_options, StringName("yarn_beta_slow"), model_state.context_params.yarn_beta_slow);
+	model_state.context_metadata["context_size"] = static_cast<int64_t>(model_state.context_params.n_ctx);
+	model_state.context_metadata["n_batch"] = static_cast<int64_t>(model_state.context_params.n_batch);
+	model_state.context_metadata["n_ubatch"] = static_cast<int64_t>(model_state.context_params.n_ubatch);
+	model_state.context_metadata["n_seq_max"] = static_cast<int64_t>(model_state.context_params.n_seq_max);
+	model_state.context_metadata["n_threads"] = model_state.context_params.n_threads;
+	model_state.context_metadata["n_threads_batch"] = model_state.context_params.n_threads_batch;
+	model_state.context_metadata["flash_attn_type"] = static_cast<int64_t>(model_state.context_params.flash_attn_type);
+	model_state.context_metadata["embeddings"] = model_state.context_params.embeddings;
+	model_state.context_metadata["offload_kqv"] = model_state.context_params.offload_kqv;
+	model_state.context_metadata["no_perf"] = model_state.context_params.no_perf;
+	model_state.context_metadata["op_offload"] = model_state.context_params.op_offload;
+	model_state.context_metadata["swa_full"] = model_state.context_params.swa_full;
+	model_state.context_metadata["kv_unified"] = model_state.context_params.kv_unified;
+	model_state.context_metadata["rope_scaling"] = p_model->get_rope_scaling();
+	model_state.context_metadata["rope_freq_scale"] = model_state.context_params.rope_freq_scale;
 
 	const RID model_rid = data->model_owner.make_rid(model_state);
 
@@ -252,6 +410,7 @@ AIBackendModelLoadResult LlamaBackend::load_model(const Ref<AIModelResource> &p_
 	result.model_handle.metadata["n_params"] = static_cast<int64_t>(llama_model_n_params(native_model));
 	result.model_handle.metadata["model_size_bytes"] = static_cast<int64_t>(llama_model_size(native_model));
 	result.model_handle.metadata["supports_gpu_offload"] = llama_supports_gpu_offload();
+	result.model_handle.metadata["context"] = model_state.context_metadata;
 
 	char description[512] = {};
 	if (llama_model_desc(native_model, description, sizeof(description)) > 0) {
@@ -313,32 +472,61 @@ AIBackendContextCreateResult LlamaBackend::create_context(const AIBackendModelHa
 		return result;
 	}
 
-	MutexLock lock(data->mutex);
-	Data::ModelState *model = data->model_owner.get_or_null(p_model_handle.rid);
-	if (model == nullptr) {
-		result.code = ERR_DOES_NOT_EXIST;
-		result.message = "Cannot create llama context for an unloaded model.";
-		return result;
-	}
-
-	if (model->unloading) {
-		result.code = ERR_BUSY;
-		result.message = "Cannot create llama context while model is unloading.";
-		return result;
-	}
-
-	if (model->native_model == nullptr) {
-		result.code = ERR_DOES_NOT_EXIST;
-		result.message = "Cannot create llama context for a model that is no longer loaded.";
-		return result;
-	}
-
 	Data::ContextState context_state;
-	context_state.model_rid = p_model_handle.rid;
-	context_state.create_sequence = ++data->context_counter;
+	Dictionary context_metadata;
+	llama_model *native_model = nullptr;
+	llama_context_params context_params = llama_context_default_params();
+
+	{
+		MutexLock lock(data->mutex);
+		Data::ModelState *model = data->model_owner.get_or_null(p_model_handle.rid);
+		if (model == nullptr) {
+			result.code = ERR_DOES_NOT_EXIST;
+			result.message = "Cannot create llama context for an unloaded model.";
+			return result;
+		}
+
+		if (model->unloading) {
+			result.code = ERR_BUSY;
+			result.message = "Cannot create llama context while model is unloading.";
+			return result;
+		}
+
+		if (model->native_model == nullptr) {
+			result.code = ERR_DOES_NOT_EXIST;
+			result.message = "Cannot create llama context for a model that is no longer loaded.";
+			return result;
+		}
+
+		context_state.model_rid = p_model_handle.rid;
+		context_state.create_sequence = ++data->context_counter;
+		context_metadata = model->context_metadata;
+		context_params = model->context_params;
+		native_model = model->native_model;
+		model->active_contexts++;
+	}
+
+	context_state.native_context = llama_init_from_model(native_model, context_params);
+	if (context_state.native_context == nullptr) {
+		MutexLock lock(data->mutex);
+		Data::ModelState *model = data->model_owner.get_or_null(p_model_handle.rid);
+		if (model != nullptr && model->active_contexts > 0) {
+			model->active_contexts--;
+			if (model->unloading && model->active_contexts == 0) {
+				if (model->native_model != nullptr) {
+					llama_model_free(model->native_model);
+					model->native_model = nullptr;
+				}
+				data->model_owner.free(p_model_handle.rid);
+			}
+		}
+		result.code = ERR_CANT_CREATE;
+		result.message = "LlamaBackend failed to create llama_context from the loaded model.";
+		result.details = context_metadata;
+		return result;
+	}
 
 	const RID context_rid = data->context_owner.make_rid(context_state);
-	model->active_contexts++;
 
 	result.context_handle.rid = context_rid;
 	result.context_handle.model_rid = p_model_handle.rid;
@@ -346,6 +534,9 @@ AIBackendContextCreateResult LlamaBackend::create_context(const AIBackendModelHa
 	result.context_handle.exclusive_decode = true;
 	result.context_handle.metadata["implementation_stage"] = "context-created";
 	result.context_handle.metadata["create_sequence"] = static_cast<int64_t>(context_state.create_sequence);
+	result.context_handle.metadata["n_ctx"] = static_cast<int64_t>(llama_n_ctx(context_state.native_context));
+	result.context_handle.metadata["n_batch"] = static_cast<int64_t>(llama_n_batch(context_state.native_context));
+	result.context_handle.metadata.merge(context_metadata, false);
 	result.details = result.context_handle.metadata;
 	return result;
 }
@@ -362,13 +553,24 @@ void LlamaBackend::destroy_context(const AIBackendContextHandle &p_context_handl
 		return;
 	}
 
+	if (context->busy) {
+		context->destroy_requested = true;
+		return;
+	}
+
 	const RID model_rid = context->model_rid;
 	Data::ModelState *model = data->model_owner.get_or_null(model_rid);
 	if (model != nullptr && model->active_contexts > 0) {
 		model->active_contexts--;
 	}
 
+	if (context->native_context != nullptr) {
+		llama_free(context->native_context);
+		context->native_context = nullptr;
+	}
+
 	data->context_owner.free(p_context_handle.rid);
+	data->context_destroy_counter++;
 
 	if (model != nullptr && model->unloading && model->active_contexts == 0) {
 		if (model->native_model != nullptr) {
@@ -438,6 +640,12 @@ AIBackendResult LlamaBackend::run_job(const AIComputeJob &p_job) {
 			return result;
 		}
 
+		if (context->native_context == nullptr) {
+			result.code = ERR_DOES_NOT_EXIST;
+			result.message = "LlamaBackend native context is no longer available.";
+			return result;
+		}
+
 		context->busy = true;
 		context->cancel_requested = false;
 		data->running_jobs.insert(p_job.job_id, p_job.context_handle.rid);
@@ -459,13 +667,34 @@ AIBackendResult LlamaBackend::run_job(const AIComputeJob &p_job) {
 	{
 		MutexLock lock(data->mutex);
 		Data::ContextState *context = data->context_owner.get_or_null(p_job.context_handle.rid);
+		Data::ModelState *model = nullptr;
 		if (context != nullptr) {
 			context->busy = false;
+			model = data->model_owner.get_or_null(context->model_rid);
+			if (context->destroy_requested) {
+				if (model != nullptr && model->active_contexts > 0) {
+					model->active_contexts--;
+				}
+				if (context->native_context != nullptr) {
+					llama_free(context->native_context);
+					context->native_context = nullptr;
+				}
+				data->context_owner.free(p_job.context_handle.rid);
+				data->context_destroy_counter++;
+			}
 		}
 		data->running_jobs.erase(p_job.job_id);
 		data->rejected_job_count++;
 		data->stream_flush_count += token_stream.get_flush_count();
 		data->streamed_token_count += token_stream.get_total_tokens();
+
+		if (model != nullptr && model->unloading && model->active_contexts == 0) {
+			if (model->native_model != nullptr) {
+				llama_model_free(model->native_model);
+				model->native_model = nullptr;
+			}
+			data->model_owner.free(p_job.model_handle.rid);
+		}
 	}
 
 	result.code = ERR_UNAVAILABLE;
@@ -505,6 +734,7 @@ Dictionary LlamaBackend::get_runtime_stats() const {
 		MutexLock lock(data->mutex);
 		stats["load_count"] = static_cast<int64_t>(data->load_counter);
 		stats["context_create_count"] = static_cast<int64_t>(data->context_counter);
+		stats["context_destroy_count"] = static_cast<int64_t>(data->context_destroy_counter);
 		stats["running_jobs"] = static_cast<int64_t>(data->running_jobs.size());
 		stats["rejected_job_count"] = static_cast<int64_t>(data->rejected_job_count);
 		stats["cancel_request_count"] = static_cast<int64_t>(data->cancel_request_count);
