@@ -34,8 +34,10 @@
 #include "core/error/error_macros.h"
 #include "core/io/file_access.h"
 #include "core/os/mutex.h"
+#include "core/os/os.h"
 #include "core/string/ustring.h"
 #include "core/templates/hash_map.h"
+#include "core/templates/local_vector.h"
 #include "core/templates/rid_owner.h"
 #include "modules/woodot_ai/runtime/ai_token_stream.h"
 #include "modules/woodot_ai/resources/ai_model_resource.h"
@@ -208,6 +210,127 @@ struct LlamaBackend::Data {
 	uint64_t streamed_token_count = 0;
 };
 
+bool _tokenize_prompt(const llama_vocab *p_vocab, const String &p_prompt, LocalVector<llama_token> &r_tokens, String &r_error) {
+	ERR_FAIL_NULL_V(p_vocab, false);
+
+	const CharString prompt_utf8 = p_prompt.utf8();
+	const int32_t prompt_len = prompt_utf8.length();
+	int32_t token_capacity = MAX<int32_t>(prompt_len + 8, 32);
+	r_tokens.resize(token_capacity);
+
+	const int32_t token_count = llama_tokenize(
+			p_vocab,
+			prompt_utf8.get_data(),
+			prompt_len,
+			r_tokens.ptr(),
+			token_capacity,
+			true,
+			true);
+	if (token_count == INT32_MIN) {
+		r_error = "Prompt tokenization overflowed int32_t capacity.";
+		r_tokens.clear();
+		return false;
+	}
+	if (token_count < 0) {
+		token_capacity = -token_count;
+		r_tokens.resize(token_capacity);
+		const int32_t retry_count = llama_tokenize(
+				p_vocab,
+				prompt_utf8.get_data(),
+				prompt_len,
+				r_tokens.ptr(),
+				token_capacity,
+				true,
+				true);
+		if (retry_count < 0) {
+			r_error = "LlamaBackend failed to tokenize prompt.";
+			r_tokens.clear();
+			return false;
+		}
+		r_tokens.resize(retry_count);
+		return true;
+	}
+
+	r_tokens.resize(token_count);
+	return true;
+}
+
+String _token_to_string(const llama_vocab *p_vocab, llama_token p_token) {
+	char stack_buffer[256];
+	int32_t piece_size = llama_token_to_piece(p_vocab, p_token, stack_buffer, sizeof(stack_buffer), 0, true);
+	if (piece_size == INT32_MIN) {
+		return String();
+	}
+	if (piece_size < 0) {
+		LocalVector<char> dynamic_buffer;
+		dynamic_buffer.resize(-piece_size + 1);
+		piece_size = llama_token_to_piece(p_vocab, p_token, dynamic_buffer.ptr(), dynamic_buffer.size(), 0, true);
+		if (piece_size < 0) {
+			return String();
+		}
+		dynamic_buffer[piece_size] = '\0';
+		return String::utf8(dynamic_buffer.ptr(), piece_size);
+	}
+
+	return String::utf8(stack_buffer, piece_size);
+}
+
+String _describe_decode_error(int32_t p_decode_result) {
+	switch (p_decode_result) {
+		case 1:
+			return "llama_decode() could not reserve a KV slot for the submitted batch.";
+		case 2:
+			return "llama_decode() aborted before the batch completed.";
+		case -1:
+			return "llama_decode() rejected the submitted batch as invalid.";
+		default:
+			return vformat("llama_decode() failed with code %d.", p_decode_result);
+	}
+}
+
+Error _map_decode_error_code(int32_t p_decode_result) {
+	switch (p_decode_result) {
+		case 1:
+			return ERR_OUT_OF_MEMORY;
+		case 2:
+			return ERR_SKIP;
+		case -1:
+			return ERR_INVALID_PARAMETER;
+		default:
+			return ERR_CANT_CREATE;
+	}
+}
+
+llama_sampler *_build_completion_sampler(const AIComputeJob &p_job) {
+	llama_sampler_chain_params sampler_params = llama_sampler_chain_default_params();
+	llama_sampler *sampler = llama_sampler_chain_init(sampler_params);
+	ERR_FAIL_NULL_V(sampler, nullptr);
+
+	if (p_job.top_k > 0) {
+		llama_sampler_chain_add(sampler, llama_sampler_init_top_k(p_job.top_k));
+	}
+	if (p_job.top_p > 0.0f && p_job.top_p < 1.0f) {
+		llama_sampler_chain_add(sampler, llama_sampler_init_top_p(p_job.top_p, 1));
+	}
+
+	if (p_job.temperature <= 0.0f) {
+		llama_sampler_chain_add(sampler, llama_sampler_init_greedy());
+		return sampler;
+	}
+
+	llama_sampler_chain_add(sampler, llama_sampler_init_temp(p_job.temperature));
+
+	uint32_t seed = LLAMA_DEFAULT_SEED;
+	if (p_job.metadata.has("seed")) {
+		const Variant seed_value = p_job.metadata["seed"];
+		if (seed_value.get_type() == Variant::INT || seed_value.get_type() == Variant::FLOAT || seed_value.get_type() == Variant::BOOL) {
+			seed = static_cast<uint32_t>(MAX(int64_t(seed_value), int64_t(0)));
+		}
+	}
+	llama_sampler_chain_add(sampler, llama_sampler_init_dist(seed));
+	return sampler;
+}
+
 LlamaBackend::LlamaBackend() {
 	data = memnew(Data);
 	_acquire_llama_api();
@@ -258,7 +381,7 @@ AIBackendCapabilities LlamaBackend::get_capabilities() const {
 	AIBackendCapabilities capabilities;
 	capabilities.supports_completion = true;
 	capabilities.supports_embedding = true;
-	capabilities.supports_streaming = true;
+	capabilities.supports_streaming = false;
 	capabilities.supports_cancellation = true;
 	capabilities.supports_context_reuse = true;
 	capabilities.supports_cpu_execution = true;
@@ -269,7 +392,7 @@ AIBackendCapabilities LlamaBackend::get_capabilities() const {
 		capabilities.supported_devices.push_back("gpu");
 	}
 	capabilities.metadata["runtime_ready"] = true;
-	capabilities.metadata["implementation_stage"] = "model-loading";
+	capabilities.metadata["implementation_stage"] = "completion-minimal";
 	return capabilities;
 }
 
@@ -584,7 +707,7 @@ void LlamaBackend::destroy_context(const AIBackendContextHandle &p_context_handl
 AIBackendResult LlamaBackend::run_job(const AIComputeJob &p_job) {
 	AIBackendResult result;
 	result.metadata["backend"] = get_backend_name();
-	result.metadata["implementation_stage"] = "skeleton";
+	result.metadata["implementation_stage"] = "completion-minimal";
 	result.metadata["job_id"] = static_cast<int64_t>(p_job.job_id);
 
 	if (!p_job.model_handle.is_valid()) {
@@ -611,10 +734,21 @@ AIBackendResult LlamaBackend::run_job(const AIComputeJob &p_job) {
 		return result;
 	}
 
+	if (p_job.type != AIBackendJobType::COMPLETION) {
+		result.code = ERR_UNAVAILABLE;
+		result.message = "LlamaBackend embedding execution is not implemented yet.";
+		return result;
+	}
+
+	Data::ModelState *model = nullptr;
+	Data::ContextState *context = nullptr;
+	llama_model *native_model = nullptr;
+	llama_context *native_context = nullptr;
+
 	{
 		MutexLock lock(data->mutex);
-		Data::ModelState *model = data->model_owner.get_or_null(p_job.model_handle.rid);
-		Data::ContextState *context = data->context_owner.get_or_null(p_job.context_handle.rid);
+		model = data->model_owner.get_or_null(p_job.model_handle.rid);
+		context = data->context_owner.get_or_null(p_job.context_handle.rid);
 
 		if (model == nullptr) {
 			result.code = ERR_DOES_NOT_EXIST;
@@ -646,6 +780,8 @@ AIBackendResult LlamaBackend::run_job(const AIComputeJob &p_job) {
 			return result;
 		}
 
+		native_model = model->native_model;
+		native_context = context->native_context;
 		context->busy = true;
 		context->cancel_requested = false;
 		data->running_jobs.insert(p_job.job_id, p_job.context_handle.rid);
@@ -654,53 +790,185 @@ AIBackendResult LlamaBackend::run_job(const AIComputeJob &p_job) {
 		}
 	}
 
-	AITokenStream token_stream;
-	AITokenStream::Config token_stream_config;
-	token_stream_config.enabled = p_job.stream;
-	token_stream.configure(token_stream_config);
-	if (p_job.stream && !p_job.prompt.is_empty()) {
-		PackedStringArray preview_tokens;
-		preview_tokens.push_back("[streaming-not-implemented]");
-		token_stream.push_tokens(preview_tokens, 0);
+	const llama_vocab *vocab = llama_model_get_vocab(native_model);
+	if (vocab == nullptr) {
+		result.code = ERR_DOES_NOT_EXIST;
+		result.message = "LlamaBackend model vocabulary is unavailable.";
+	} else if (!llama_model_has_decoder(native_model)) {
+		result.code = ERR_UNAVAILABLE;
+		result.message = "LlamaBackend completion requires a decoder-capable model.";
+	} else {
+		const uint64_t started_us = OS::get_singleton()->get_ticks_usec();
+		const uint64_t deadline_us = p_job.timeout_ms > 0 ? started_us + static_cast<uint64_t>(p_job.timeout_ms) * 1000 : 0;
+
+		String tokenization_error;
+		LocalVector<llama_token> prompt_tokens;
+		if (!_tokenize_prompt(vocab, p_job.prompt, prompt_tokens, tokenization_error)) {
+			result.code = ERR_INVALID_PARAMETER;
+			result.message = tokenization_error;
+		} else {
+			if (prompt_tokens.is_empty()) {
+				const llama_token decoder_start = llama_model_decoder_start_token(native_model);
+				if (decoder_start >= 0) {
+					prompt_tokens.push_back(decoder_start);
+				} else {
+					const llama_token bos_token = llama_vocab_bos(vocab);
+					if (bos_token >= 0) {
+						prompt_tokens.push_back(bos_token);
+					}
+				}
+			}
+
+			const int32_t max_context = static_cast<int32_t>(llama_n_ctx(native_context));
+			if (prompt_tokens.is_empty()) {
+				result.code = ERR_INVALID_PARAMETER;
+				result.message = "LlamaBackend requires a non-empty prompt after tokenization.";
+			} else if (max_context > 0 && static_cast<int32_t>(prompt_tokens.size()) >= max_context) {
+				result.code = ERR_OUT_OF_MEMORY;
+				result.message = vformat("Prompt requires %d tokens but context only supports %d.", static_cast<int32_t>(prompt_tokens.size()), max_context);
+			} else {
+				llama_sampler *sampler = _build_completion_sampler(p_job);
+				if (sampler == nullptr) {
+					result.code = ERR_CANT_CREATE;
+					result.message = "LlamaBackend failed to create a completion sampler.";
+				} else {
+					llama_batch batch = llama_batch_init(static_cast<int32_t>(prompt_tokens.size()), 0, 1);
+					for (int32_t i = 0; i < static_cast<int32_t>(prompt_tokens.size()); i++) {
+						batch.token[i] = prompt_tokens[i];
+						batch.pos[i] = i;
+						batch.n_seq_id[i] = 1;
+						batch.seq_id[i][0] = 0;
+						batch.logits[i] = i == static_cast<int32_t>(prompt_tokens.size()) - 1;
+					}
+					batch.n_tokens = static_cast<int32_t>(prompt_tokens.size());
+
+					int32_t decode_result = llama_decode(native_context, batch);
+					llama_batch_free(batch);
+
+					if (decode_result != 0) {
+						result.code = _map_decode_error_code(decode_result);
+						result.message = _describe_decode_error(decode_result);
+						if (decode_result == 2) {
+							result.was_cancelled = true;
+							result.timed_out = deadline_us > 0 && OS::get_singleton()->get_ticks_usec() >= deadline_us;
+							if (result.timed_out) {
+								result.code = ERR_TIMEOUT;
+							}
+						}
+					} else {
+						String final_text;
+						PackedStringArray final_tokens;
+						int32_t generated_token_count = 0;
+						int32_t current_pos = static_cast<int32_t>(prompt_tokens.size());
+						const int32_t max_generation_tokens = MAX(p_job.max_tokens, 0);
+
+						while (generated_token_count < max_generation_tokens) {
+							if (deadline_us > 0 && OS::get_singleton()->get_ticks_usec() >= deadline_us) {
+								result.code = ERR_TIMEOUT;
+								result.message = "LlamaBackend completion exceeded the timeout budget.";
+								result.timed_out = true;
+								break;
+							}
+
+							{
+								MutexLock lock(data->mutex);
+								Data::ContextState *live_context = data->context_owner.get_or_null(p_job.context_handle.rid);
+								if (live_context == nullptr || live_context->cancel_requested) {
+									result.code = ERR_SKIP;
+									result.message = "LlamaBackend completion was cancelled.";
+									result.was_cancelled = true;
+									break;
+								}
+							}
+
+							const llama_token next_token = llama_sampler_sample(sampler, native_context, -1);
+							if (next_token < 0 || llama_vocab_is_eog(vocab, next_token)) {
+								result.code = OK;
+								break;
+							}
+
+							const String token_text = _token_to_string(vocab, next_token);
+							if (!token_text.is_empty()) {
+								final_text += token_text;
+								final_tokens.push_back(token_text);
+							}
+
+							llama_batch token_batch = llama_batch_init(1, 0, 1);
+							token_batch.token[0] = next_token;
+							token_batch.pos[0] = current_pos++;
+							token_batch.n_seq_id[0] = 1;
+							token_batch.seq_id[0][0] = 0;
+							token_batch.logits[0] = 1;
+							token_batch.n_tokens = 1;
+
+							decode_result = llama_decode(native_context, token_batch);
+							llama_batch_free(token_batch);
+							generated_token_count++;
+							if (decode_result != 0) {
+								result.code = _map_decode_error_code(decode_result);
+								result.message = _describe_decode_error(decode_result);
+								if (decode_result == 2) {
+									result.was_cancelled = true;
+									result.timed_out = deadline_us > 0 && OS::get_singleton()->get_ticks_usec() >= deadline_us;
+									if (result.timed_out) {
+										result.code = ERR_TIMEOUT;
+									}
+								}
+								break;
+							}
+
+							result.code = OK;
+						}
+
+						if (result.code == OK) {
+							result.final_text = final_text;
+							result.metadata["prompt_token_count"] = static_cast<int64_t>(prompt_tokens.size());
+							result.metadata["generated_token_count"] = generated_token_count;
+							result.metadata["generated_pieces"] = final_tokens;
+							result.metadata["streaming_requested"] = p_job.stream;
+							result.metadata["finish_reason"] = generated_token_count >= max_generation_tokens ? String("max_tokens") : String("stop");
+						}
+					}
+
+					llama_sampler_free(sampler);
+				}
+			}
+		}
 	}
 
 	{
 		MutexLock lock(data->mutex);
-		Data::ContextState *context = data->context_owner.get_or_null(p_job.context_handle.rid);
-		Data::ModelState *model = nullptr;
-		if (context != nullptr) {
-			context->busy = false;
-			model = data->model_owner.get_or_null(context->model_rid);
-			if (context->destroy_requested) {
-				if (model != nullptr && model->active_contexts > 0) {
-					model->active_contexts--;
+		Data::ContextState *live_context = data->context_owner.get_or_null(p_job.context_handle.rid);
+		Data::ModelState *live_model = nullptr;
+		if (live_context != nullptr) {
+			live_context->busy = false;
+			live_model = data->model_owner.get_or_null(live_context->model_rid);
+			if (live_context->destroy_requested) {
+				if (live_model != nullptr && live_model->active_contexts > 0) {
+					live_model->active_contexts--;
 				}
-				if (context->native_context != nullptr) {
-					llama_free(context->native_context);
-					context->native_context = nullptr;
+				if (live_context->native_context != nullptr) {
+					llama_free(live_context->native_context);
+					live_context->native_context = nullptr;
 				}
 				data->context_owner.free(p_job.context_handle.rid);
 				data->context_destroy_counter++;
 			}
 		}
 		data->running_jobs.erase(p_job.job_id);
-		data->rejected_job_count++;
-		data->stream_flush_count += token_stream.get_flush_count();
-		data->streamed_token_count += token_stream.get_total_tokens();
 
-		if (model != nullptr && model->unloading && model->active_contexts == 0) {
-			if (model->native_model != nullptr) {
-				llama_model_free(model->native_model);
-				model->native_model = nullptr;
+		if (live_model != nullptr && live_model->unloading && live_model->active_contexts == 0) {
+			if (live_model->native_model != nullptr) {
+				llama_model_free(live_model->native_model);
+				live_model->native_model = nullptr;
 			}
 			data->model_owner.free(p_job.model_handle.rid);
 		}
 	}
 
-	result.code = ERR_UNAVAILABLE;
-	result.message = "LlamaBackend skeleton is initialized but inference execution is not implemented yet.";
-	result.metadata["streaming_requested"] = p_job.stream;
-	result.metadata["token_stream"] = token_stream.get_stats();
+	if (result.message.is_empty() && result.code == OK) {
+		result.message = "LlamaBackend completion finished.";
+	}
 	return result;
 }
 
@@ -726,7 +994,7 @@ bool LlamaBackend::cancel_job(uint64_t p_job_id) {
 Dictionary LlamaBackend::get_runtime_stats() const {
 	Dictionary stats;
 	stats["backend"] = get_backend_name();
-	stats["implementation_stage"] = "model-loading";
+	stats["implementation_stage"] = "completion-minimal";
 	stats["loaded_models"] = static_cast<int64_t>(data->model_owner.get_rid_count());
 	stats["active_contexts"] = static_cast<int64_t>(data->context_owner.get_rid_count());
 
