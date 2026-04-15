@@ -32,6 +32,7 @@
 
 #include "core/config/engine.h"
 #include "core/config/project_settings.h"
+#include "core/error/error_macros.h"
 #include "core/object/class_db.h"
 #include "modules/woodot_ai/import/ai_asset_annotator.h"
 #include "modules/woodot_ai/import/ai_extension_api.h"
@@ -77,6 +78,26 @@ static UndoRedoBridge *woodot_ai_undo_redo_bridge = nullptr;
 static EditorAIService *woodot_ai_editor_service = nullptr;
 #endif
 
+static void woodot_ai_remove_engine_singleton(const char *p_name) {
+	Engine *engine = Engine::get_singleton();
+	if (engine == nullptr) {
+		return;
+	}
+
+	if (engine->has_singleton(p_name)) {
+		engine->remove_singleton(p_name);
+	}
+}
+
+template <typename T>
+static void woodot_ai_free_singleton(const char *p_name, T *&p_ptr) {
+	woodot_ai_remove_engine_singleton(p_name);
+	if (p_ptr != nullptr) {
+		memdelete(p_ptr);
+		p_ptr = nullptr;
+	}
+}
+
 void initialize_woodot_ai_module(ModuleInitializationLevel p_level) {
 	switch (p_level) {
 		case MODULE_INITIALIZATION_LEVEL_CORE:
@@ -94,6 +115,8 @@ void initialize_woodot_ai_module(ModuleInitializationLevel p_level) {
 			GDREGISTER_CLASS(AIRuntimeServer);
 			break;
 		case MODULE_INITIALIZATION_LEVEL_SERVERS: {
+			ERR_FAIL_COND_MSG(woodot_ai_runtime_server != nullptr, "AIRuntimeServer already initialized.");
+			ERR_FAIL_COND_MSG(Engine::get_singleton()->has_singleton("AIRuntimeServer"), "AIRuntimeServer singleton already registered.");
 			woodot_ai_runtime_server = memnew(AIRuntimeServer);
 			Engine::get_singleton()->add_singleton(Engine::Singleton("AIRuntimeServer", woodot_ai_runtime_server, "AIRuntimeServer"));
 		} break;
@@ -101,6 +124,7 @@ void initialize_woodot_ai_module(ModuleInitializationLevel p_level) {
 			break;
 		case MODULE_INITIALIZATION_LEVEL_EDITOR:
 #ifdef TOOLS_ENABLED
+			ERR_FAIL_COND_MSG(woodot_ai_runtime_server == nullptr, "AIRuntimeServer must be initialized before woodot_ai editor singletons.");
 			GDREGISTER_CLASS(EditorAIPreviewDiff);
 			GDREGISTER_CLASS(EditorContextCollector);
 			GDREGISTER_CLASS(GDScriptRepairEngine);
@@ -113,72 +137,96 @@ void initialize_woodot_ai_module(ModuleInitializationLevel p_level) {
 			GDREGISTER_CLASS(NodeGraphIntentParser);
 			GDREGISTER_CLASS(UndoRedoBridge);
 			GDREGISTER_CLASS(EditorAIService);
+			ERR_FAIL_COND_MSG(woodot_ai_preview_diff != nullptr, "EditorAIPreviewDiff already initialized.");
+			ERR_FAIL_COND_MSG(Engine::get_singleton()->has_singleton("EditorAIPreviewDiff"), "EditorAIPreviewDiff singleton already registered.");
 			woodot_ai_preview_diff = memnew(EditorAIPreviewDiff);
 			{
 				Engine::Singleton singleton("EditorAIPreviewDiff", woodot_ai_preview_diff, "EditorAIPreviewDiff");
 				singleton.editor_only = true;
 				Engine::get_singleton()->add_singleton(singleton);
 			}
+			ERR_FAIL_COND_MSG(woodot_ai_editor_context_collector != nullptr, "EditorContextCollector already initialized.");
+			ERR_FAIL_COND_MSG(Engine::get_singleton()->has_singleton("EditorContextCollector"), "EditorContextCollector singleton already registered.");
 			woodot_ai_editor_context_collector = memnew(EditorContextCollector);
 			{
 				Engine::Singleton singleton("EditorContextCollector", woodot_ai_editor_context_collector, "EditorContextCollector");
 				singleton.editor_only = true;
 				Engine::get_singleton()->add_singleton(singleton);
 			}
+			ERR_FAIL_COND_MSG(woodot_ai_gdscript_repair_engine != nullptr, "GDScriptRepairEngine already initialized.");
+			ERR_FAIL_COND_MSG(Engine::get_singleton()->has_singleton("GDScriptRepairEngine"), "GDScriptRepairEngine singleton already registered.");
 			woodot_ai_gdscript_repair_engine = memnew(GDScriptRepairEngine);
 			{
 				Engine::Singleton singleton("GDScriptRepairEngine", woodot_ai_gdscript_repair_engine, "GDScriptRepairEngine");
 				singleton.editor_only = true;
 				Engine::get_singleton()->add_singleton(singleton);
 			}
+			ERR_FAIL_COND_MSG(woodot_ai_asset_annotator != nullptr, "AIAssetAnnotator already initialized.");
+			ERR_FAIL_COND_MSG(Engine::get_singleton()->has_singleton("AIAssetAnnotator"), "AIAssetAnnotator singleton already registered.");
 			woodot_ai_asset_annotator = memnew(AIAssetAnnotator);
 			{
 				Engine::Singleton singleton("AIAssetAnnotator", woodot_ai_asset_annotator, "AIAssetAnnotator");
 				singleton.editor_only = true;
 				Engine::get_singleton()->add_singleton(singleton);
 			}
+			ERR_FAIL_COND_MSG(woodot_ai_mesh_post_processor != nullptr, "AIMeshPostProcessor already initialized.");
+			ERR_FAIL_COND_MSG(Engine::get_singleton()->has_singleton("AIMeshPostProcessor"), "AIMeshPostProcessor singleton already registered.");
 			woodot_ai_mesh_post_processor = memnew(AIMeshPostProcessor);
 			{
 				Engine::Singleton singleton("AIMeshPostProcessor", woodot_ai_mesh_post_processor, "AIMeshPostProcessor");
 				singleton.editor_only = true;
 				Engine::get_singleton()->add_singleton(singleton);
 			}
+			ERR_FAIL_COND_MSG(woodot_ai_texture_enhancer != nullptr, "AITextureEnhancer already initialized.");
+			ERR_FAIL_COND_MSG(Engine::get_singleton()->has_singleton("AITextureEnhancer"), "AITextureEnhancer singleton already registered.");
 			woodot_ai_texture_enhancer = memnew(AITextureEnhancer);
 			{
 				Engine::Singleton singleton("AITextureEnhancer", woodot_ai_texture_enhancer, "AITextureEnhancer");
 				singleton.editor_only = true;
 				Engine::get_singleton()->add_singleton(singleton);
 			}
+			ERR_FAIL_COND_MSG(woodot_ai_model_cache_manager != nullptr, "ModelCacheManager already initialized.");
+			ERR_FAIL_COND_MSG(Engine::get_singleton()->has_singleton("ModelCacheManager"), "ModelCacheManager singleton already registered.");
 			woodot_ai_model_cache_manager = memnew(ModelCacheManager);
 			{
 				Engine::Singleton singleton("ModelCacheManager", woodot_ai_model_cache_manager, "ModelCacheManager");
 				singleton.editor_only = true;
 				Engine::get_singleton()->add_singleton(singleton);
 			}
+			ERR_FAIL_COND_MSG(woodot_ai_extension_api != nullptr, "AIExtensionAPI already initialized.");
+			ERR_FAIL_COND_MSG(Engine::get_singleton()->has_singleton("AIExtensionAPI"), "AIExtensionAPI singleton already registered.");
 			woodot_ai_extension_api = memnew(AIExtensionAPI);
 			{
 				Engine::Singleton singleton("AIExtensionAPI", woodot_ai_extension_api, "AIExtensionAPI");
 				singleton.editor_only = true;
 				Engine::get_singleton()->add_singleton(singleton);
 			}
+			ERR_FAIL_COND_MSG(woodot_ai_import_orchestrator != nullptr, "AIImportOrchestrator already initialized.");
+			ERR_FAIL_COND_MSG(Engine::get_singleton()->has_singleton("AIImportOrchestrator"), "AIImportOrchestrator singleton already registered.");
 			woodot_ai_import_orchestrator = memnew(AIImportOrchestrator);
 			{
 				Engine::Singleton singleton("AIImportOrchestrator", woodot_ai_import_orchestrator, "AIImportOrchestrator");
 				singleton.editor_only = true;
 				Engine::get_singleton()->add_singleton(singleton);
 			}
+			ERR_FAIL_COND_MSG(woodot_ai_node_graph_intent_parser != nullptr, "NodeGraphIntentParser already initialized.");
+			ERR_FAIL_COND_MSG(Engine::get_singleton()->has_singleton("NodeGraphIntentParser"), "NodeGraphIntentParser singleton already registered.");
 			woodot_ai_node_graph_intent_parser = memnew(NodeGraphIntentParser);
 			{
 				Engine::Singleton singleton("NodeGraphIntentParser", woodot_ai_node_graph_intent_parser, "NodeGraphIntentParser");
 				singleton.editor_only = true;
 				Engine::get_singleton()->add_singleton(singleton);
 			}
+			ERR_FAIL_COND_MSG(woodot_ai_undo_redo_bridge != nullptr, "UndoRedoBridge already initialized.");
+			ERR_FAIL_COND_MSG(Engine::get_singleton()->has_singleton("UndoRedoBridge"), "UndoRedoBridge singleton already registered.");
 			woodot_ai_undo_redo_bridge = memnew(UndoRedoBridge);
 			{
 				Engine::Singleton singleton("UndoRedoBridge", woodot_ai_undo_redo_bridge, "UndoRedoBridge");
 				singleton.editor_only = true;
 				Engine::get_singleton()->add_singleton(singleton);
 			}
+			ERR_FAIL_COND_MSG(woodot_ai_editor_service != nullptr, "EditorAIService already initialized.");
+			ERR_FAIL_COND_MSG(Engine::get_singleton()->has_singleton("EditorAIService"), "EditorAIService singleton already registered.");
 			woodot_ai_editor_service = memnew(EditorAIService);
 			{
 				Engine::Singleton singleton("EditorAIService", woodot_ai_editor_service, "EditorAIService");
@@ -195,102 +243,25 @@ void uninitialize_woodot_ai_module(ModuleInitializationLevel p_level) {
 		case MODULE_INITIALIZATION_LEVEL_CORE:
 			break;
 		case MODULE_INITIALIZATION_LEVEL_SERVERS:
-			if (woodot_ai_runtime_server != nullptr) {
-				if (Engine::get_singleton()->has_singleton("AIRuntimeServer")) {
-					Engine::get_singleton()->remove_singleton("AIRuntimeServer");
-				}
-				memdelete(woodot_ai_runtime_server);
-				woodot_ai_runtime_server = nullptr;
-			}
+			woodot_ai_free_singleton("AIRuntimeServer", woodot_ai_runtime_server);
 			break;
 		case MODULE_INITIALIZATION_LEVEL_SCENE:
 			break;
 		case MODULE_INITIALIZATION_LEVEL_EDITOR:
 #ifdef TOOLS_ENABLED
-			if (woodot_ai_editor_service != nullptr) {
-				if (Engine::get_singleton()->has_singleton("EditorAIService")) {
-					Engine::get_singleton()->remove_singleton("EditorAIService");
-				}
-				memdelete(woodot_ai_editor_service);
-				woodot_ai_editor_service = nullptr;
-			}
-			if (woodot_ai_undo_redo_bridge != nullptr) {
-				if (Engine::get_singleton()->has_singleton("UndoRedoBridge")) {
-					Engine::get_singleton()->remove_singleton("UndoRedoBridge");
-				}
-				memdelete(woodot_ai_undo_redo_bridge);
-				woodot_ai_undo_redo_bridge = nullptr;
-			}
-			if (woodot_ai_editor_context_collector != nullptr) {
-				if (Engine::get_singleton()->has_singleton("EditorContextCollector")) {
-					Engine::get_singleton()->remove_singleton("EditorContextCollector");
-				}
-				memdelete(woodot_ai_editor_context_collector);
-				woodot_ai_editor_context_collector = nullptr;
-			}
-			if (woodot_ai_gdscript_repair_engine != nullptr) {
-				if (Engine::get_singleton()->has_singleton("GDScriptRepairEngine")) {
-					Engine::get_singleton()->remove_singleton("GDScriptRepairEngine");
-				}
-				memdelete(woodot_ai_gdscript_repair_engine);
-				woodot_ai_gdscript_repair_engine = nullptr;
-			}
-			if (woodot_ai_import_orchestrator != nullptr) {
-				if (Engine::get_singleton()->has_singleton("AIImportOrchestrator")) {
-					Engine::get_singleton()->remove_singleton("AIImportOrchestrator");
-				}
-				memdelete(woodot_ai_import_orchestrator);
-				woodot_ai_import_orchestrator = nullptr;
-			}
-			if (woodot_ai_asset_annotator != nullptr) {
-				if (Engine::get_singleton()->has_singleton("AIAssetAnnotator")) {
-					Engine::get_singleton()->remove_singleton("AIAssetAnnotator");
-				}
-				memdelete(woodot_ai_asset_annotator);
-				woodot_ai_asset_annotator = nullptr;
-			}
-			if (woodot_ai_mesh_post_processor != nullptr) {
-				if (Engine::get_singleton()->has_singleton("AIMeshPostProcessor")) {
-					Engine::get_singleton()->remove_singleton("AIMeshPostProcessor");
-				}
-				memdelete(woodot_ai_mesh_post_processor);
-				woodot_ai_mesh_post_processor = nullptr;
-			}
-			if (woodot_ai_texture_enhancer != nullptr) {
-				if (Engine::get_singleton()->has_singleton("AITextureEnhancer")) {
-					Engine::get_singleton()->remove_singleton("AITextureEnhancer");
-				}
-				memdelete(woodot_ai_texture_enhancer);
-				woodot_ai_texture_enhancer = nullptr;
-			}
-			if (woodot_ai_model_cache_manager != nullptr) {
-				if (Engine::get_singleton()->has_singleton("ModelCacheManager")) {
-					Engine::get_singleton()->remove_singleton("ModelCacheManager");
-				}
-				memdelete(woodot_ai_model_cache_manager);
-				woodot_ai_model_cache_manager = nullptr;
-			}
-			if (woodot_ai_extension_api != nullptr) {
-				if (Engine::get_singleton()->has_singleton("AIExtensionAPI")) {
-					Engine::get_singleton()->remove_singleton("AIExtensionAPI");
-				}
-				memdelete(woodot_ai_extension_api);
-				woodot_ai_extension_api = nullptr;
-			}
-			if (woodot_ai_node_graph_intent_parser != nullptr) {
-				if (Engine::get_singleton()->has_singleton("NodeGraphIntentParser")) {
-					Engine::get_singleton()->remove_singleton("NodeGraphIntentParser");
-				}
-				memdelete(woodot_ai_node_graph_intent_parser);
-				woodot_ai_node_graph_intent_parser = nullptr;
-			}
-			if (woodot_ai_preview_diff != nullptr) {
-				if (Engine::get_singleton()->has_singleton("EditorAIPreviewDiff")) {
-					Engine::get_singleton()->remove_singleton("EditorAIPreviewDiff");
-				}
-				memdelete(woodot_ai_preview_diff);
-				woodot_ai_preview_diff = nullptr;
-			}
+			// Destroy in reverse order of initialization to reduce dependency risks.
+			woodot_ai_free_singleton("EditorAIService", woodot_ai_editor_service);
+			woodot_ai_free_singleton("UndoRedoBridge", woodot_ai_undo_redo_bridge);
+			woodot_ai_free_singleton("NodeGraphIntentParser", woodot_ai_node_graph_intent_parser);
+			woodot_ai_free_singleton("AIImportOrchestrator", woodot_ai_import_orchestrator);
+			woodot_ai_free_singleton("AIExtensionAPI", woodot_ai_extension_api);
+			woodot_ai_free_singleton("ModelCacheManager", woodot_ai_model_cache_manager);
+			woodot_ai_free_singleton("AITextureEnhancer", woodot_ai_texture_enhancer);
+			woodot_ai_free_singleton("AIMeshPostProcessor", woodot_ai_mesh_post_processor);
+			woodot_ai_free_singleton("AIAssetAnnotator", woodot_ai_asset_annotator);
+			woodot_ai_free_singleton("GDScriptRepairEngine", woodot_ai_gdscript_repair_engine);
+			woodot_ai_free_singleton("EditorContextCollector", woodot_ai_editor_context_collector);
+			woodot_ai_free_singleton("EditorAIPreviewDiff", woodot_ai_preview_diff);
 #endif
 			break;
 	}
